@@ -1,5 +1,7 @@
 import src.get_data
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
@@ -107,4 +109,21 @@ if __name__ == '__main__':
     time_difference_df['AbsErrorQOpt'] = time_difference_df['TimeDifferenceSecondsQOpt'].apply(abs)
     time_difference_df['AbsErrorQSingle'] = time_difference_df['TimeDifferenceSecondsQSingle'].apply(abs)
 
-    print('Done')
+    fig, (ax1, ax2) = plt.subplots(2, 1)
+
+    fig: plt.Figure
+    ax1: plt.Axes
+    ax2: plt.Axes
+
+    ax1.hist(x=time_difference_df['TimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1)
+    ax1.set_title('Error Dist. Whole Fastest Lap')
+    ax1.set_xlabel('Time Difference (sec)')
+    ax1.set_ylabel('Count')
+
+    ax2.hist(x=time_difference_df['TimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1)
+    ax2.set_title('Error Dist. Only Fastest Sectors')
+    ax2.set_xlabel('Time Difference (sec)')
+    ax2.set_ylabel('Count')
+
+    plt.tight_layout()
+    plt.show()
