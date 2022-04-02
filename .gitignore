@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 # Cache
-.fastf1_cache/
+/fastf1_cache/
