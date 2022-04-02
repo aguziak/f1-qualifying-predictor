@@ -152,6 +152,8 @@ if __name__ == '__main__':
             to not be representative.
     """
     df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
+    df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
+    df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
     fig, (ax1, ax2) = plt.subplots(2, 1)
 
@@ -159,16 +161,16 @@ if __name__ == '__main__':
     ax1: plt.Axes
     ax2: plt.Axes
 
-    n_bins = 100
+    n_bins = 50
 
-    ax1.hist(x=df['TimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1, bins=n_bins)
+    ax1.hist(x=df['PctTimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1, bins=n_bins)
     ax1.set_title('Error Dist. Whole Fastest Lap')
-    ax1.set_xlabel('Time Difference (sec)')
+    ax1.set_xlabel('Pct Difference')
     ax1.set_ylabel('Count')
 
-    ax2.hist(x=df['TimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1, bins=n_bins)
+    ax2.hist(x=df['PctTimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1, bins=n_bins)
     ax2.set_title('Error Dist. Only Fastest Sectors')
-    ax2.set_xlabel('Time Difference (sec)')
+    ax2.set_xlabel('Pct Difference')
     ax2.set_ylabel('Count')
 
     plt.tight_layout()
