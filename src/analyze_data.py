@@ -145,6 +145,14 @@ if __name__ == '__main__':
         print(f'Processing round {round_num}')
         df = pd.concat([df, get_time_differences_for_race_weekend(year, round_num)], axis=0)
 
+    """
+        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
+            occurring during one of the sessions, leading a driver to be unable to set a representative time,
+            or because of substantially different weather (wet vs. dry conditions) again causing the times
+            to not be representative.
+    """
+    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
+
     fig, (ax1, ax2) = plt.subplots(2, 1)
 
     fig: plt.Figure
