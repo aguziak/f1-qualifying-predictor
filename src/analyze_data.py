@@ -1,8 +1,9 @@
 import fastf1
-
 import src.get_data
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats
 
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
@@ -163,13 +164,41 @@ if __name__ == '__main__':
 
     n_bins = 50
 
-    ax1.hist(x=df['PctTimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1, bins=n_bins)
-    ax1.set_title('Error Dist. Whole Fastest Lap')
+    single_lap_std_dev = np.std(df['PctTimeDifferenceSecondsQSingle'])
+    single_lap_avg = np.average(df['PctTimeDifferenceSecondsQSingle'])
+    single_lap_gaussian_x = np.linspace(min(df['PctTimeDifferenceSecondsQSingle']) - 1,
+                                        max(df['PctTimeDifferenceSecondsQSingle']) + 1,
+                                        100)
+    single_lap_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x, single_lap_avg, single_lap_std_dev)
+
+    fastest_sectors_std_dev = np.std(df['PctTimeDifferenceSecondsQOpt'])
+    fastest_sectors_avg = np.average(df['PctTimeDifferenceSecondsQOpt'])
+    fastest_sectors_gaussian_x = np.linspace(min(df['PctTimeDifferenceSecondsQOpt']) - 1,
+                                             max(df['PctTimeDifferenceSecondsQOpt']) + 1,
+                                             100)
+    fastest_sectors_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x, single_lap_avg, single_lap_std_dev)
+
+    ax1.hist(x=df['PctTimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1, bins=n_bins, density=True)
+    ax1.axvline(x=single_lap_avg, color='k', linestyle='-')
+    ax1.axvline(x=single_lap_avg + single_lap_std_dev, color='k', linestyle='--')
+    ax1.axvline(x=single_lap_avg + 2 * single_lap_std_dev, color='k', linestyle='--')
+    ax1.axvline(x=single_lap_avg - single_lap_std_dev, color='k', linestyle='--')
+    ax1.axvline(x=single_lap_avg - 2 * single_lap_std_dev, color='k', linestyle='--')
+    ax1.plot(single_lap_gaussian_x, single_lap_gaussian_y, color='r', linestyle='--')
+
+    ax1.set_title('Whole Fastest Lap to Quali Pct Difference PDF')
     ax1.set_xlabel('Pct Difference')
     ax1.set_ylabel('Count')
 
-    ax2.hist(x=df['PctTimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1, bins=n_bins)
-    ax2.set_title('Error Dist. Only Fastest Sectors')
+    ax2.hist(x=df['PctTimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1, bins=n_bins, density=True)
+    ax2.axvline(x=fastest_sectors_avg, color='k', linestyle='-')
+    ax2.axvline(x=fastest_sectors_avg + fastest_sectors_std_dev, color='k', linestyle='--')
+    ax2.axvline(x=fastest_sectors_avg + 2 * fastest_sectors_std_dev, color='k', linestyle='--')
+    ax2.axvline(x=fastest_sectors_avg - fastest_sectors_std_dev, color='k', linestyle='--')
+    ax2.axvline(x=fastest_sectors_avg - 2 * fastest_sectors_std_dev, color='k', linestyle='--')
+    ax2.plot(fastest_sectors_gaussian_x, fastest_sectors_gaussian_y, color='r', linestyle='--')
+
+    ax2.set_title('Only Sectors Lap to Quali Pct Difference PDF')
     ax2.set_xlabel('Pct Difference')
     ax2.set_ylabel('Count')
 
