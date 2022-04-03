@@ -166,40 +166,44 @@ if __name__ == '__main__':
 
     single_lap_std_dev = np.std(df['PctTimeDifferenceSecondsQSingle'])
     single_lap_avg = np.average(df['PctTimeDifferenceSecondsQSingle'])
-    single_lap_gaussian_x = np.linspace(min(df['PctTimeDifferenceSecondsQSingle']) - 1,
-                                        max(df['PctTimeDifferenceSecondsQSingle']) + 1,
+    single_lap_pct_diff_z_scores = (df['PctTimeDifferenceSecondsQSingle'] - single_lap_avg) / single_lap_std_dev
+    single_lap_bin_width = (single_lap_pct_diff_z_scores.max() - single_lap_pct_diff_z_scores.min()) / n_bins
+
+    single_lap_gaussian_x = np.linspace(min(single_lap_pct_diff_z_scores) - 1,
+                                        max(single_lap_pct_diff_z_scores) + 1,
                                         100)
-    single_lap_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x, single_lap_avg, single_lap_std_dev)
+    single_lap_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x,
+                                                 np.average(single_lap_pct_diff_z_scores),
+                                                 np.std(single_lap_pct_diff_z_scores))
+    single_lap_gaussian_y *= (len(single_lap_pct_diff_z_scores) * single_lap_bin_width)
 
     fastest_sectors_std_dev = np.std(df['PctTimeDifferenceSecondsQOpt'])
     fastest_sectors_avg = np.average(df['PctTimeDifferenceSecondsQOpt'])
-    fastest_sectors_gaussian_x = np.linspace(min(df['PctTimeDifferenceSecondsQOpt']) - 1,
-                                             max(df['PctTimeDifferenceSecondsQOpt']) + 1,
-                                             100)
-    fastest_sectors_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x, single_lap_avg, single_lap_std_dev)
+    fastest_sectors_pct_diff_z_scores = (df['PctTimeDifferenceSecondsQOpt'] - fastest_sectors_avg) \
+                                        / fastest_sectors_std_dev
+    fastest_sectors_bin_width = (fastest_sectors_pct_diff_z_scores.max() - fastest_sectors_pct_diff_z_scores.min()) \
+                                / n_bins
 
-    ax1.hist(x=df['PctTimeDifferenceSecondsQSingle'], edgecolor='k', linewidth=1, bins=n_bins, density=True)
-    ax1.axvline(x=single_lap_avg, color='k', linestyle='-')
-    ax1.axvline(x=single_lap_avg + single_lap_std_dev, color='k', linestyle='--')
-    ax1.axvline(x=single_lap_avg + 2 * single_lap_std_dev, color='k', linestyle='--')
-    ax1.axvline(x=single_lap_avg - single_lap_std_dev, color='k', linestyle='--')
-    ax1.axvline(x=single_lap_avg - 2 * single_lap_std_dev, color='k', linestyle='--')
+    fastest_sectors_gaussian_x = np.linspace(min(fastest_sectors_pct_diff_z_scores) - 1,
+                                             max(fastest_sectors_pct_diff_z_scores) + 1,
+                                             100)
+    fastest_sectors_gaussian_y = scipy.stats.norm.pdf(fastest_sectors_gaussian_x,
+                                                      np.average(fastest_sectors_pct_diff_z_scores),
+                                                      np.std(fastest_sectors_pct_diff_z_scores))
+    fastest_sectors_gaussian_y *= (len(fastest_sectors_pct_diff_z_scores) * fastest_sectors_bin_width)
+
+    ax1.hist(x=single_lap_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
     ax1.plot(single_lap_gaussian_x, single_lap_gaussian_y, color='r', linestyle='--')
 
-    ax1.set_title('Whole Fastest Lap to Quali Pct Difference PDF')
-    ax1.set_xlabel('Pct Difference')
+    ax1.set_title('Whole Fastest Lap to Quali Pct Difference')
+    ax1.set_xlabel('Z-Score')
     ax1.set_ylabel('Count')
 
-    ax2.hist(x=df['PctTimeDifferenceSecondsQOpt'], edgecolor='k', linewidth=1, bins=n_bins, density=True)
-    ax2.axvline(x=fastest_sectors_avg, color='k', linestyle='-')
-    ax2.axvline(x=fastest_sectors_avg + fastest_sectors_std_dev, color='k', linestyle='--')
-    ax2.axvline(x=fastest_sectors_avg + 2 * fastest_sectors_std_dev, color='k', linestyle='--')
-    ax2.axvline(x=fastest_sectors_avg - fastest_sectors_std_dev, color='k', linestyle='--')
-    ax2.axvline(x=fastest_sectors_avg - 2 * fastest_sectors_std_dev, color='k', linestyle='--')
+    ax2.hist(x=fastest_sectors_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
     ax2.plot(fastest_sectors_gaussian_x, fastest_sectors_gaussian_y, color='r', linestyle='--')
 
-    ax2.set_title('Only Sectors Lap to Quali Pct Difference PDF')
-    ax2.set_xlabel('Pct Difference')
+    ax2.set_title('Fastest Sectors Lap to Quali Pct Difference')
+    ax2.set_xlabel('Z-Score')
     ax2.set_ylabel('Count')
 
     plt.tight_layout()
