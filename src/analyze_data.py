@@ -156,11 +156,18 @@ if __name__ == '__main__':
     df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
     df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
-    fig, (ax1, ax2) = plt.subplots(2, 1)
+    fig, axes = plt.subplots(2, 2)
+
+    ax1 = axes[0][0]
+    ax2 = axes[1][0]
+    ax3 = axes[0][1]
+    ax4 = axes[1][1]
 
     fig: plt.Figure
     ax1: plt.Axes
     ax2: plt.Axes
+    ax3: plt.Axes
+    ax4: plt.Axes
 
     n_bins = 50
 
@@ -193,18 +200,44 @@ if __name__ == '__main__':
     fastest_sectors_gaussian_y *= (len(fastest_sectors_pct_diff_z_scores) * fastest_sectors_bin_width)
 
     ax1.hist(x=single_lap_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
-    ax1.plot(single_lap_gaussian_x, single_lap_gaussian_y, color='r', linestyle='--')
+    ax1.plot(single_lap_gaussian_x, single_lap_gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
 
     ax1.set_title('Whole Fastest Lap to Quali Pct Difference')
     ax1.set_xlabel('Z-Score')
     ax1.set_ylabel('Count')
+    ax1.legend()
 
     ax2.hist(x=fastest_sectors_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
-    ax2.plot(fastest_sectors_gaussian_x, fastest_sectors_gaussian_y, color='r', linestyle='--')
+    ax2.plot(fastest_sectors_gaussian_x, fastest_sectors_gaussian_y, color='r', linestyle='--',
+             label='Scaled Normal Curve')
 
     ax2.set_title('Fastest Sectors Lap to Quali Pct Difference')
     ax2.set_xlabel('Z-Score')
     ax2.set_ylabel('Count')
+    ax2.legend()
+
+    n = len(df['PctTimeDifferenceSecondsQSingle'])
+    single_lap_pct_diff_normal_quantiles = scipy.stats.norm.ppf(
+        (np.arange(1, n + 1)) / (n + 1),
+        0,
+        1)
+    ax3.scatter(x=single_lap_pct_diff_normal_quantiles, y=single_lap_pct_diff_z_scores.sort_values())
+    ax3.plot(single_lap_pct_diff_normal_quantiles, single_lap_pct_diff_normal_quantiles, linestyle='--', color='k')
+    ax3.set_title('QQ Plot')
+    ax3.set_xlabel('Normal Theoretical Quantiles')
+    ax3.set_ylabel('Observed Quantiles')
+
+    n = len(df['PctTimeDifferenceSecondsQOpt'])
+    fastest_sectors_pct_diff_normal_quantiles = scipy.stats.norm.ppf(
+        (np.arange(1, n + 1)) / (n + 1),
+        0,
+        1)
+    ax4.scatter(x=fastest_sectors_pct_diff_normal_quantiles, y=fastest_sectors_pct_diff_z_scores.sort_values())
+    ax4.plot(fastest_sectors_pct_diff_normal_quantiles, fastest_sectors_pct_diff_normal_quantiles, linestyle='--',
+             color='k')
+    ax4.set_title('QQ Plot')
+    ax4.set_xlabel('Normal Theoretical Quantiles')
+    ax4.set_ylabel('Observed Quantiles')
 
     plt.tight_layout()
     plt.show()
