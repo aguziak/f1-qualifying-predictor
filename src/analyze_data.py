@@ -28,6 +28,40 @@ def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
     return optimal_lap_times
 
 
+def run_avg_pct_diff_model(fp_df: pd.DataFrame, q_df: pd.DataFrame):
+    """
+
+    Args:
+        fp_df: DataFrame containing Free Practice lap timing data
+        q_df: DataFrame containing Qualifying results
+
+    Returns:
+
+    """
+    pass
+
+
+def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
+    """
+    Gets all the FP and qualifying timing data for the given year and returns the data as an aggregated df
+
+    Args:
+        year (int): Year for which to retrieve data
+
+    Returns:
+        DataFrame: Pandas DataFrame containing one row per driver per lap for all fp laps they participated in
+    """
+
+    event_schedule = src.get_data.get_event_schedule_for_year(year)
+    agg_df = pd.DataFrame()
+
+    for round_num in event_schedule['RoundNumber'].tolist():
+        print(f'Processing round {round_num}')
+        agg_df = pd.concat([agg_df, get_time_differences_for_race_weekend(year, round_num)], axis=0)
+
+    return agg_df
+
+
 def get_time_differences_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
     event = src.get_data.get_event_data_for_session(session_year, session_round)
     is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
@@ -130,114 +164,104 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     time_difference_df['TimeDifferenceSecondsQSingle'] = time_difference_df['QualifyingTimeSeconds'] - \
                                                          time_difference_df['FastestSingleFPLapTimeSeconds']
 
-    time_difference_df['AbsErrorQOpt'] = time_difference_df['TimeDifferenceSecondsQOpt'].apply(abs)
-    time_difference_df['AbsErrorQSingle'] = time_difference_df['TimeDifferenceSecondsQSingle'].apply(abs)
+    time_difference_df['Year'] = session_year
+    time_difference_df['Round'] = session_round
 
     return time_difference_df
 
 
-if __name__ == '__main__':
-    year = 2021
+def run_pct_difference_model_for_year(year: int) -> pd.DataFrame:
+    """
 
-    event_schedule = src.get_data.get_event_schedule_for_year(year)
-    df = pd.DataFrame()
+    Args:
+        year:
 
-    for round_num in event_schedule['RoundNumber'].tolist():
-        print(f'Processing round {round_num}')
-        df = pd.concat([df, get_time_differences_for_race_weekend(year, round_num)], axis=0)
+    Returns:
 
+    """
+    df = get_all_fp_timing_data_for_year(year)
+
+    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
     """
         Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
             occurring during one of the sessions, leading a driver to be unable to set a representative time,
             or because of substantially different weather (wet vs. dry conditions) again causing the times
             to not be representative.
     """
-    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
+
     df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
     df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
-    fig, axes = plt.subplots(2, 2)
+    min_round = min(df['Round'])
+    max_round = max(df['Round'])
 
-    ax1 = axes[0][0]
-    ax2 = axes[1][0]
-    ax3 = axes[0][1]
-    ax4 = axes[1][1]
+    n_training = round(max_round * 0.7)
+
+    training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
+
+    training_df = df.loc[df['Round'].isin(training_rounds)]
+    testing_df = df.loc[~df['Round'].isin(training_rounds)]
+
+    avg_pct_difference_optimal_lap = np.mean(training_df['PctTimeDifferenceSecondsQOpt'])
+    testing_df['PredictedQualifyingLapTimeSeconds'] = \
+        testing_df['OptimalFPLapTimeSeconds'] + \
+        testing_df['OptimalFPLapTimeSeconds'] * (avg_pct_difference_optimal_lap / 100.)
+    testing_df['BasicModelTimeErrorSeconds'] = testing_df['PredictedQualifyingLapTimeSeconds'] - testing_df[
+        'QualifyingTimeSeconds']
+
+    return testing_df.dropna()
+
+
+def plot_model_error_dist(errors: pd.Series):
+    """
+
+    Args:
+        errors:
+
+    Returns:
+
+    """
+
+    fig, (ax1, ax2) = plt.subplots(2)
 
     fig: plt.Figure
     ax1: plt.Axes
     ax2: plt.Axes
-    ax3: plt.Axes
-    ax4: plt.Axes
 
     n_bins = 50
 
-    single_lap_std_dev = np.std(df['PctTimeDifferenceSecondsQSingle'])
-    single_lap_avg = np.average(df['PctTimeDifferenceSecondsQSingle'])
-    single_lap_pct_diff_z_scores = (df['PctTimeDifferenceSecondsQSingle'] - single_lap_avg) / single_lap_std_dev
-    single_lap_bin_width = (single_lap_pct_diff_z_scores.max() - single_lap_pct_diff_z_scores.min()) / n_bins
+    std_dev = np.std(errors)
+    avg = np.average(errors)
+    z_scores = (errors - avg) / std_dev
+    bin_width = (errors.max() - errors.min()) / n_bins
 
-    single_lap_gaussian_x = np.linspace(min(single_lap_pct_diff_z_scores) - 1,
-                                        max(single_lap_pct_diff_z_scores) + 1,
-                                        100)
-    single_lap_gaussian_y = scipy.stats.norm.pdf(single_lap_gaussian_x,
-                                                 np.average(single_lap_pct_diff_z_scores),
-                                                 np.std(single_lap_pct_diff_z_scores))
-    single_lap_gaussian_y *= (len(single_lap_pct_diff_z_scores) * single_lap_bin_width)
+    gaussian_x = np.linspace(min(errors) - 1, max(errors) + 1, 100)
+    gaussian_y = scipy.stats.norm.pdf(gaussian_x, avg, std_dev)
+    gaussian_y *= (len(errors) * bin_width)
 
-    fastest_sectors_std_dev = np.std(df['PctTimeDifferenceSecondsQOpt'])
-    fastest_sectors_avg = np.average(df['PctTimeDifferenceSecondsQOpt'])
-    fastest_sectors_pct_diff_z_scores = (df['PctTimeDifferenceSecondsQOpt'] - fastest_sectors_avg) \
-                                        / fastest_sectors_std_dev
-    fastest_sectors_bin_width = (fastest_sectors_pct_diff_z_scores.max() - fastest_sectors_pct_diff_z_scores.min()) \
-                                / n_bins
-
-    fastest_sectors_gaussian_x = np.linspace(min(fastest_sectors_pct_diff_z_scores) - 1,
-                                             max(fastest_sectors_pct_diff_z_scores) + 1,
-                                             100)
-    fastest_sectors_gaussian_y = scipy.stats.norm.pdf(fastest_sectors_gaussian_x,
-                                                      np.average(fastest_sectors_pct_diff_z_scores),
-                                                      np.std(fastest_sectors_pct_diff_z_scores))
-    fastest_sectors_gaussian_y *= (len(fastest_sectors_pct_diff_z_scores) * fastest_sectors_bin_width)
-
-    ax1.hist(x=single_lap_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
-    ax1.plot(single_lap_gaussian_x, single_lap_gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
+    ax1.hist(x=z_scores, edgecolor='k', linewidth=1, bins=n_bins)
+    ax1.plot(gaussian_x, gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
 
     ax1.set_title('Whole Fastest Lap to Quali Pct Difference')
     ax1.set_xlabel('Z-Score')
     ax1.set_ylabel('Count')
     ax1.legend()
 
-    ax2.hist(x=fastest_sectors_pct_diff_z_scores, edgecolor='k', linewidth=1, bins=n_bins)
-    ax2.plot(fastest_sectors_gaussian_x, fastest_sectors_gaussian_y, color='r', linestyle='--',
-             label='Scaled Normal Curve')
-
-    ax2.set_title('Fastest Sectors Lap to Quali Pct Difference')
-    ax2.set_xlabel('Z-Score')
-    ax2.set_ylabel('Count')
-    ax2.legend()
-
-    n = len(df['PctTimeDifferenceSecondsQSingle'])
+    n = len(errors)
     single_lap_pct_diff_normal_quantiles = scipy.stats.norm.ppf(
         (np.arange(1, n + 1)) / (n + 1),
         0,
         1)
-    ax3.scatter(x=single_lap_pct_diff_normal_quantiles, y=single_lap_pct_diff_z_scores.sort_values())
-    ax3.plot(single_lap_pct_diff_normal_quantiles, single_lap_pct_diff_normal_quantiles, linestyle='--', color='k')
-    ax3.set_title('QQ Plot')
-    ax3.set_xlabel('Normal Theoretical Quantiles')
-    ax3.set_ylabel('Observed Quantiles')
-
-    n = len(df['PctTimeDifferenceSecondsQOpt'])
-    fastest_sectors_pct_diff_normal_quantiles = scipy.stats.norm.ppf(
-        (np.arange(1, n + 1)) / (n + 1),
-        0,
-        1)
-    ax4.scatter(x=fastest_sectors_pct_diff_normal_quantiles, y=fastest_sectors_pct_diff_z_scores.sort_values())
-    ax4.plot(fastest_sectors_pct_diff_normal_quantiles, fastest_sectors_pct_diff_normal_quantiles, linestyle='--',
-             color='k')
-    ax4.set_title('QQ Plot')
-    ax4.set_xlabel('Normal Theoretical Quantiles')
-    ax4.set_ylabel('Observed Quantiles')
+    ax2.scatter(x=single_lap_pct_diff_normal_quantiles, y=z_scores.sort_values())
+    ax2.plot(single_lap_pct_diff_normal_quantiles, single_lap_pct_diff_normal_quantiles, linestyle='--', color='k')
+    ax2.set_title('QQ Plot')
+    ax2.set_xlabel('Normal Theoretical Quantiles')
+    ax2.set_ylabel('Observed Quantiles')
 
     plt.tight_layout()
     plt.show()
+
+
+if __name__ == '__main__':
+    results = run_pct_difference_model_for_year(2021)
+    plot_model_error_dist(results['BasicModelTimeErrorSeconds'])
