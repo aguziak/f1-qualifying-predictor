@@ -1,4 +1,6 @@
 import fastf1
+from typing import List
+
 import src.get_data
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -57,7 +59,9 @@ def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
 
     for round_num in event_schedule['RoundNumber'].tolist():
         print(f'Processing round {round_num}')
-        agg_df = pd.concat([agg_df, get_time_differences_for_race_weekend(year, round_num)], axis=0)
+        new_data = get_time_differences_for_race_weekend(year, round_num)
+        if len(new_data) > 0:
+            agg_df = pd.concat([agg_df, new_data], axis=0)
 
     return agg_df
 
@@ -100,7 +104,10 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
         except fastf1.core.DataNotLoadedError:
             print(f'No data for event: Year {session_year} round {session_round} FP1')
 
-    full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
+    if len(retrieved_session_data) > 0:
+        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
+    else:
+        return pd.DataFrame()
 
     optimal_lap_times_df = create_optimal_lap_times(full_testing_data_df) \
         .sort_values(by='TotalLapTime') \
@@ -170,16 +177,22 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     return time_difference_df
 
 
-def run_pct_difference_model_for_year(year: int) -> pd.DataFrame:
+def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.75) -> (float, pd.DataFrame):
     """
+    Create and evaluate the pct difference model for a given range of years
 
     Args:
-        year:
+        years (int): The years for which to run the model
+        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .75
 
     Returns:
+        Tuple: Tuple containing the average percent difference between all drivers' optimal laps and their
+            qualifying lap times, and the test DataFrame used for evaluating the model
 
     """
-    df = get_all_fp_timing_data_for_year(year)
+    df = pd.DataFrame()
+    for year in years:
+        df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
 
     df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
     """
@@ -195,7 +208,7 @@ def run_pct_difference_model_for_year(year: int) -> pd.DataFrame:
     min_round = min(df['Round'])
     max_round = max(df['Round'])
 
-    n_training = round(max_round * 0.7)
+    n_training = round(max_round * test_set_pct)
 
     training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
 
@@ -209,16 +222,15 @@ def run_pct_difference_model_for_year(year: int) -> pd.DataFrame:
     testing_df['BasicModelTimeErrorSeconds'] = testing_df['PredictedQualifyingLapTimeSeconds'] - testing_df[
         'QualifyingTimeSeconds']
 
-    return testing_df.dropna()
+    return avg_pct_difference_optimal_lap, testing_df.dropna()
 
 
-def plot_model_error_dist(errors: pd.Series):
+def plot_error_dist(errors: pd.Series):
     """
+    Creates a histogram and QQ plot for the provided error distribution
 
     Args:
-        errors:
-
-    Returns:
+        errors (Series): Pandas Series object containing error data
 
     """
 
@@ -263,5 +275,5 @@ def plot_model_error_dist(errors: pd.Series):
 
 
 if __name__ == '__main__':
-    results = run_pct_difference_model_for_year(2021)
-    plot_model_error_dist(results['BasicModelTimeErrorSeconds'])
+    avg_pct_difference, testing_df_results = run_pct_difference_model_for_years([2020, 2021])
+    plot_error_dist(testing_df_results['BasicModelTimeErrorSeconds'])
