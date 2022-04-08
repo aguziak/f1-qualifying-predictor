@@ -312,7 +312,7 @@ def plot_error_dist(errors: pd.Series):
     ax1.hist(x=z_scores, edgecolor='k', linewidth=1, bins=n_bins)
     ax1.plot(gaussian_x, gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
 
-    ax1.set_title('Whole Fastest Lap to Quali Pct Difference')
+    ax1.set_title('Individual Pct Differences Error Distribution')
     ax1.set_xlabel('Z-Score')
     ax1.set_ylabel('Count')
     ax1.legend()
