@@ -177,13 +177,13 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     return time_difference_df
 
 
-def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.75) -> (float, pd.DataFrame):
+def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.25) -> (float, pd.DataFrame):
     """
     Create and evaluate the pct difference model for a given range of years
 
     Args:
         years (int): The years for which to run the model
-        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .75
+        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .25
 
     Returns:
         Tuple: Tuple containing the average percent difference between all drivers' optimal laps and their
@@ -208,7 +208,7 @@ def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.75) -> (
     min_round = min(df['Round'])
     max_round = max(df['Round'])
 
-    n_training = round(max_round * test_set_pct)
+    n_training = round(max_round * (1. - test_set_pct))
 
     training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
 
@@ -223,6 +223,64 @@ def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.75) -> (
         'QualifyingTimeSeconds']
 
     return avg_pct_difference_optimal_lap, testing_df.dropna()
+
+
+def run_pct_difference_model_for_years_per_driver(years: List[int], test_set_pct=0.25, min_races=5) -> \
+        (pd.DataFrame, pd.DataFrame):
+    """
+    Create and evaluate the pct difference model for a given range of years, determining the average percent
+        difference for each driver individually
+
+    Args:
+        years (int): The years for which to run the model
+        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .25
+        min_races (int): The minimum number of races a driver must have participated in to be part of the model
+
+    Returns:
+        Tuple: Tuple containing the average percent difference between all drivers' optimal laps and their
+            qualifying lap times, and the test DataFrame used for evaluating the model
+
+    """
+    df = pd.DataFrame()
+    for year in years:
+        df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
+
+    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
+    """
+        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
+            occurring during one of the sessions, leading a driver to be unable to set a representative time,
+            or because of substantially different weather (wet vs. dry conditions) again causing the times
+            to not be representative.
+    """
+
+    df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
+    df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
+
+    min_round = min(df['Round'])
+    max_round = max(df['Round'])
+
+    n_training = round(max_round * (1. - test_set_pct))
+
+    training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
+
+    training_df = df.loc[df['Round'].isin(training_rounds)]
+    testing_df = df.loc[~df['Round'].isin(training_rounds)]
+
+    training_df = training_df.groupby(by='DriverNumber').filter(lambda group: len(group) > min_races)
+    avg_pct_difference_optimal_lap_df = training_df[['DriverNumber', 'PctTimeDifferenceSecondsQOpt']] \
+        .groupby(by='DriverNumber') \
+        .apply(np.mean) \
+        .reset_index(drop=True) \
+        .rename(columns={'PctTimeDifferenceSecondsQOpt': 'DriverAvgTimeChangePct'})
+    testing_df = testing_df.merge(avg_pct_difference_optimal_lap_df, on=['DriverNumber'])
+
+    testing_df['PredictedQualifyingLapTimeSeconds'] = \
+        testing_df['OptimalFPLapTimeSeconds'] + \
+        testing_df['OptimalFPLapTimeSeconds'] * (testing_df['DriverAvgTimeChangePct'] / 100.)
+    testing_df['BasicModelTimeErrorSeconds'] = testing_df['PredictedQualifyingLapTimeSeconds'] - testing_df[
+        'QualifyingTimeSeconds']
+
+    return avg_pct_difference_optimal_lap_df, testing_df.dropna()
 
 
 def plot_error_dist(errors: pd.Series):
@@ -245,10 +303,10 @@ def plot_error_dist(errors: pd.Series):
     std_dev = np.std(errors)
     avg = np.average(errors)
     z_scores = (errors - avg) / std_dev
-    bin_width = (errors.max() - errors.min()) / n_bins
 
-    gaussian_x = np.linspace(min(errors) - 1, max(errors) + 1, 100)
-    gaussian_y = scipy.stats.norm.pdf(gaussian_x, avg, std_dev)
+    bin_width = (z_scores.max() - z_scores.min()) / n_bins
+    gaussian_x = np.linspace(min(z_scores), max(z_scores), 100)
+    gaussian_y = scipy.stats.norm.pdf(gaussian_x, 0, 1)
     gaussian_y *= (len(errors) * bin_width)
 
     ax1.hist(x=z_scores, edgecolor='k', linewidth=1, bins=n_bins)
@@ -275,5 +333,7 @@ def plot_error_dist(errors: pd.Series):
 
 
 if __name__ == '__main__':
-    avg_pct_difference, testing_df_results = run_pct_difference_model_for_years([2020, 2021])
+    avg_pct_difference, testing_df_results = run_pct_difference_model_for_years_per_driver(
+        years=[2019, 2020, 2021],
+        test_set_pct=.3)
     plot_error_dist(testing_df_results['BasicModelTimeErrorSeconds'])
