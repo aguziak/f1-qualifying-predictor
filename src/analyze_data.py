@@ -1,11 +1,13 @@
 import fastf1
 from typing import List
+from sklearn.linear_model import LinearRegression
 
 import src.get_data
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
+import sklearn.model_selection
 
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
@@ -225,20 +227,17 @@ def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.25) -> (
     return avg_pct_difference_optimal_lap, testing_df.dropna()
 
 
-def run_pct_difference_model_for_years_per_driver(years: List[int], test_set_pct=0.25, min_races=5) -> \
-        (pd.DataFrame, pd.DataFrame):
+def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
     """
     Create and evaluate the pct difference model for a given range of years, determining the average percent
         difference for each driver individually
 
     Args:
         years (int): The years for which to run the model
-        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .25
-        min_races (int): The minimum number of races a driver must have participated in to be part of the model
+        num_k_folds (int): The number of cross-validation folds to use
 
     Returns:
-        Tuple: Tuple containing the average percent difference between all drivers' optimal laps and their
-            qualifying lap times, and the test DataFrame used for evaluating the model
+        float: The averaged r2 score for the model given the n k folds
 
     """
     df = pd.DataFrame()
@@ -256,31 +255,25 @@ def run_pct_difference_model_for_years_per_driver(years: List[int], test_set_pct
     df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
     df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
-    min_round = min(df['Round'])
-    max_round = max(df['Round'])
+    training_k_folds = sklearn.model_selection.KFold(n_splits=num_k_folds)
 
-    n_training = round(max_round * (1. - test_set_pct))
+    scores = list()
 
-    training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
+    for training_index, validation_index in training_k_folds.split(df):
+        k_fold_training_set = df.iloc[training_index]
+        k_fold_validation_set = df.iloc[validation_index]
 
-    training_df = df.loc[df['Round'].isin(training_rounds)]
-    testing_df = df.loc[~df['Round'].isin(training_rounds)]
+        regression = LinearRegression()
 
-    training_df = training_df.groupby(by='DriverNumber').filter(lambda group: len(group) > min_races)
-    avg_pct_difference_optimal_lap_df = training_df[['DriverNumber', 'PctTimeDifferenceSecondsQOpt']] \
-        .groupby(by='DriverNumber') \
-        .apply(np.mean) \
-        .reset_index(drop=True) \
-        .rename(columns={'PctTimeDifferenceSecondsQOpt': 'DriverAvgTimeChangePct'})
-    testing_df = testing_df.merge(avg_pct_difference_optimal_lap_df, on=['DriverNumber'])
+        regression.fit(X=np.array(k_fold_training_set['OptimalFPLapTimeSeconds']).reshape(-1, 1),
+                       y=k_fold_training_set['QualifyingTimeSeconds'])
 
-    testing_df['PredictedQualifyingLapTimeSeconds'] = \
-        testing_df['OptimalFPLapTimeSeconds'] + \
-        testing_df['OptimalFPLapTimeSeconds'] * (testing_df['DriverAvgTimeChangePct'] / 100.)
-    testing_df['BasicModelTimeErrorSeconds'] = testing_df['PredictedQualifyingLapTimeSeconds'] - testing_df[
-        'QualifyingTimeSeconds']
+        score = regression.score(X=np.array(k_fold_validation_set['OptimalFPLapTimeSeconds']).reshape(-1, 1),
+                                 y=k_fold_validation_set['QualifyingTimeSeconds'])
 
-    return avg_pct_difference_optimal_lap_df, testing_df.dropna()
+        scores.append(score)
+
+    return np.average(scores)
 
 
 def plot_error_dist(errors: pd.Series):
@@ -333,7 +326,5 @@ def plot_error_dist(errors: pd.Series):
 
 
 if __name__ == '__main__':
-    avg_pct_difference, testing_df_results = run_pct_difference_model_for_years_per_driver(
-        years=[2019, 2020, 2021],
-        test_set_pct=.3)
-    plot_error_dist(testing_df_results['BasicModelTimeErrorSeconds'])
+    score = score_linear_regression_model(years=[2021])
+    print(score)
