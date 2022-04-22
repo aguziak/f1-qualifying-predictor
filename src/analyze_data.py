@@ -232,22 +232,20 @@ def spearman_rho(predictions_df: pd.DataFrame) -> float:
     return s_r
 
 
-def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
+def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
     """
     Create and evaluate the pct difference model for a given range of years, determining the average percent
         difference for each driver individually
 
     Args:
-        years (int): The years for which to run the model
+        df (DataFrame): The data for which to train and score the linear regression model
         num_k_folds (int): The number of cross-validation folds to use
 
     Returns:
         float: The averaged r2 score for the model given the n k folds
 
     """
-    df = pd.DataFrame()
-    for year in years:
-        df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
+    print('Running linear regression model')
 
     df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
     """
@@ -287,7 +285,26 @@ def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
 
         scores.append(k_fold_score)
 
-    return np.average(scores)
+    avg_score = np.average(scores)
+    print(f'Score: {avg_score}')
+    return avg_score
+
+
+def get_timing_data(years: List[int]) -> pd.DataFrame:
+    """
+    Retrieves the necessary data for modeling
+
+    Args:
+        years (List[int]): List of years of data to retrieve
+
+    Returns:
+        DataFrame: DataFrame containing the formatted data
+
+    """
+    df = pd.DataFrame()
+    for year in years:
+        df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
+    return df
 
 
 def plot_error_dist(errors: pd.Series):
@@ -340,5 +357,6 @@ def plot_error_dist(errors: pd.Series):
 
 
 if __name__ == '__main__':
-    score = score_linear_regression_model(years=[2021], num_k_folds=5)
-    print(score)
+    timing_df = get_timing_data([2021])
+    scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(100)]
+    print(scores)
