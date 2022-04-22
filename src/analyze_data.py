@@ -232,6 +232,71 @@ def spearman_rho(predictions_df: pd.DataFrame) -> float:
     return s_r
 
 
+def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) -> float:
+    """
+
+    Args:
+        df:
+        num_k_folds:
+
+    Returns:
+
+    """
+    print('Running multiple linear regression model with drivers as features')
+
+    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
+    """
+        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
+            occurring during one of the sessions, leading a driver to be unable to set a representative time,
+            or because of substantially different weather (wet vs. dry conditions) again causing the times
+            to not be representative. This ultimately means that the driver was unable to set a valid time
+            in at least one of the two sessions.
+    """
+
+    k_fold_scores = list()
+    unique_driver_numbers = np.unique(df['DriverNumber'])
+    driver_features_names = list()
+    for unique_number in unique_driver_numbers:
+        new_col_name = f'IsDriver{unique_number}'
+        driver_features_names.append(new_col_name)
+        df[new_col_name] = 0
+        df.loc[df['DriverNumber'] == unique_number, new_col_name] = 1
+
+    group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
+
+    for training_index, validation_index in group_k_fold.split(df, groups=df['Round']):
+        k_fold_training_set = df.iloc[training_index]
+        k_fold_validation_set = df.iloc[validation_index]
+
+        regression = LinearRegression()
+
+        features_col_names = [
+            'OptimalFPLapTimeSeconds',
+            *driver_features_names
+        ]
+
+        regression.fit(X=np.array(k_fold_training_set[features_col_names]),
+                       y=k_fold_training_set['QualifyingTimeSeconds'])
+
+        k_fold_validation_set['PredictedQualifyingTime'] = regression.predict(
+            X=np.array(k_fold_validation_set[features_col_names]))
+
+        k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
+            .rank('dense', ascending=True)
+        k_fold_validation_set['TrueRank'] = k_fold_validation_set.groupby('Round')['QualifyingTimeSeconds'] \
+            .rank('dense', ascending=True)
+
+        k_fold_score = np.mean(k_fold_validation_set[['Round', 'PredictedRank', 'TrueRank']]
+                               .groupby(by='Round')
+                               .apply(spearman_rho))
+
+        k_fold_scores.append(k_fold_score)
+
+    avg_score = np.average(k_fold_scores)
+    print(f'Score: {avg_score}')
+    return avg_score
+
+
 def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
     """
     Create and evaluate the pct difference model for a given range of years, determining the average percent
@@ -252,11 +317,9 @@ def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
         Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
             occurring during one of the sessions, leading a driver to be unable to set a representative time,
             or because of substantially different weather (wet vs. dry conditions) again causing the times
-            to not be representative.
+            to not be representative. This ultimately means that the driver was unable to set a valid time
+            in at least one of the two sessions.
     """
-
-    df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
-    df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
     k_fold_scores = list()
 
@@ -343,7 +406,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
         gaussian_y = scipy.stats.norm.pdf(gaussian_x, avg, std_dev)
         gaussian_y *= (len(errors) * bin_width)
         ax1.hist(x=errors, edgecolor='k', linewidth=1, bins=n_bins)
-        ax1.axvline(x=avg, label=f'Mean Value ({avg:.2f})', color='k', linestyle='--')
+        ax1.axvline(x=avg, label=f'Mean Value ({avg:.3f})', color='k', linestyle='--')
         ax1.set_xlabel(f'{error_name}')
 
     ax1.plot(gaussian_x, gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
@@ -368,6 +431,8 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 if __name__ == '__main__':
     timing_df = get_timing_data([2021])
-    scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(500)]
-    plot_error_dist(pd.Series(scores), plot_z_score=False, error_name="Spearman's Rho")
-    print(scores)
+    multi_linear_scores = [score_linear_regression_model_with_drivers(timing_df, num_k_folds=5) for i in range(1000)]
+    one_feature_scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(1000)]
+
+    plot_error_dist(pd.Series(multi_linear_scores), plot_z_score=False, error_name="Spearman's Rho")
+    plot_error_dist(pd.Series(one_feature_scores), plot_z_score=False, error_name="Spearman's Rho")
