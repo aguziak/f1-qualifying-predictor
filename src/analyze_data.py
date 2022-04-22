@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
-import sklearn.model_selection
+from sklearn.model_selection import GroupShuffleSplit
 
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
@@ -26,23 +26,11 @@ def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
         .groupby(by=['DriverNumber']) \
         .agg('min') \
         .reset_index()
-    optimal_lap_times['TotalLapTime'] = optimal_lap_times['Sector1Time'] \
-                                        + optimal_lap_times['Sector2Time'] \
-                                        + optimal_lap_times['Sector3Time']
+    optimal_lap_times['TotalLapTime'] = \
+        optimal_lap_times['Sector1Time'] \
+        + optimal_lap_times['Sector2Time'] \
+        + optimal_lap_times['Sector3Time']
     return optimal_lap_times
-
-
-def run_avg_pct_diff_model(fp_df: pd.DataFrame, q_df: pd.DataFrame):
-    """
-
-    Args:
-        fp_df: DataFrame containing Free Practice lap timing data
-        q_df: DataFrame containing Qualifying results
-
-    Returns:
-
-    """
-    pass
 
 
 def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
@@ -168,10 +156,10 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     time_difference_df['FastestSingleFPLapTimeSeconds'] = time_difference_df['FastestSingleFPLapTime'] \
         .apply(lambda td: td.total_seconds())
 
-    time_difference_df['TimeDifferenceSecondsQOpt'] = time_difference_df['QualifyingTimeSeconds'] - \
-                                                      time_difference_df['OptimalFPLapTimeSeconds']
-    time_difference_df['TimeDifferenceSecondsQSingle'] = time_difference_df['QualifyingTimeSeconds'] - \
-                                                         time_difference_df['FastestSingleFPLapTimeSeconds']
+    time_difference_df['TimeDifferenceSecondsQOpt'] = \
+        time_difference_df['QualifyingTimeSeconds'] - time_difference_df['OptimalFPLapTimeSeconds']
+    time_difference_df['TimeDifferenceSecondsQSingle'] = \
+        time_difference_df['QualifyingTimeSeconds'] - time_difference_df['FastestSingleFPLapTimeSeconds']
 
     time_difference_df['Year'] = session_year
     time_difference_df['Round'] = session_round
@@ -227,6 +215,23 @@ def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.25) -> (
     return avg_pct_difference_optimal_lap, testing_df.dropna()
 
 
+def spearman_rho(predictions_df: pd.DataFrame) -> float:
+    """
+    Calculates Spearman's rank coefficient for two given lists
+
+    Args:
+        predictions_df: DataFrame containing at least a PredictedRank and TrueRank column
+
+    Returns:
+        float: The Spearman's rank coefficient for the provided lists
+    """
+    n_observations = len(predictions_df)
+    rank_differences_sq = (predictions_df['PredictedRank'] - predictions_df['TrueRank']) ** 2
+
+    s_r = (1. - (6. * np.sum(rank_differences_sq)) / (n_observations * (n_observations ** 2. - 1.)))
+    return s_r
+
+
 def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
     """
     Create and evaluate the pct difference model for a given range of years, determining the average percent
@@ -255,11 +260,11 @@ def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
     df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
     df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
 
-    training_k_folds = sklearn.model_selection.KFold(n_splits=num_k_folds)
-
     scores = list()
 
-    for training_index, validation_index in training_k_folds.split(df):
+    group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
+
+    for training_index, validation_index in group_k_fold.split(df, groups=df['Round']):
         k_fold_training_set = df.iloc[training_index]
         k_fold_validation_set = df.iloc[validation_index]
 
@@ -268,10 +273,19 @@ def score_linear_regression_model(years: List[int], num_k_folds=5) -> float:
         regression.fit(X=np.array(k_fold_training_set['OptimalFPLapTimeSeconds']).reshape(-1, 1),
                        y=k_fold_training_set['QualifyingTimeSeconds'])
 
-        score = regression.score(X=np.array(k_fold_validation_set['OptimalFPLapTimeSeconds']).reshape(-1, 1),
-                                 y=k_fold_validation_set['QualifyingTimeSeconds'])
+        k_fold_validation_set['PredictedQualifyingTime'] = regression.predict(
+            X=np.array(k_fold_validation_set['OptimalFPLapTimeSeconds']).reshape(-1, 1))
 
-        scores.append(score)
+        k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
+            .rank('dense', ascending=True)
+        k_fold_validation_set['TrueRank'] = k_fold_validation_set.groupby('Round')['QualifyingTimeSeconds'] \
+            .rank('dense', ascending=True)
+
+        k_fold_score = np.mean(k_fold_validation_set[['Round', 'PredictedRank', 'TrueRank']]
+                               .groupby(by='Round')
+                               .apply(spearman_rho))
+
+        scores.append(k_fold_score)
 
     return np.average(scores)
 
@@ -326,5 +340,5 @@ def plot_error_dist(errors: pd.Series):
 
 
 if __name__ == '__main__':
-    score = score_linear_regression_model(years=[2021])
+    score = score_linear_regression_model(years=[2021], num_k_folds=5)
     print(score)
