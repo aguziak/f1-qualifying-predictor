@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.preprocessing import StandardScaler
 
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
@@ -262,6 +263,16 @@ def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) 
         df[new_col_name] = 0
         df.loc[df['DriverNumber'] == unique_number, new_col_name] = 1
 
+    numerical_feature_col_names = ['OptimalFPLapTimeSeconds']
+    categorical_feature_col_names = [
+        *driver_features_names
+    ]
+    scaled_feature_names = [f'{feature_name}Scaled' for feature_name in numerical_feature_col_names]
+    total_feature_names = scaled_feature_names + categorical_feature_col_names
+
+    scaler = StandardScaler()
+    df.loc[:, scaled_feature_names] = scaler.fit_transform(df[numerical_feature_col_names])
+
     group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
 
     for training_index, validation_index in group_k_fold.split(df, groups=df['Round']):
@@ -270,16 +281,11 @@ def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) 
 
         regression = LinearRegression()
 
-        features_col_names = [
-            'OptimalFPLapTimeSeconds',
-            *driver_features_names
-        ]
-
-        regression.fit(X=np.array(k_fold_training_set[features_col_names]),
+        regression.fit(X=np.array(k_fold_training_set[total_feature_names]),
                        y=k_fold_training_set['QualifyingTimeSeconds'])
 
         k_fold_validation_set['PredictedQualifyingTime'] = regression.predict(
-            X=np.array(k_fold_validation_set[features_col_names]))
+            X=np.array(k_fold_validation_set[total_feature_names]))
 
         k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
             .rank('dense', ascending=True)
@@ -323,6 +329,12 @@ def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
 
     k_fold_scores = list()
 
+    feature_names = ['OptimalFPLapTimeSeconds']
+    scaled_feature_names = [f'{feature_name}Scaled' for feature_name in feature_names]
+
+    scaler = StandardScaler()
+    df.loc[:, scaled_feature_names] = scaler.fit_transform(df[feature_names])
+
     group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
 
     for training_index, validation_index in group_k_fold.split(df, groups=df['Round']):
@@ -331,11 +343,11 @@ def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
 
         regression = LinearRegression()
 
-        regression.fit(X=np.array(k_fold_training_set['OptimalFPLapTimeSeconds']).reshape(-1, 1),
+        regression.fit(X=np.array(k_fold_training_set[scaled_feature_names]).reshape(-1, 1),
                        y=k_fold_training_set['QualifyingTimeSeconds'])
 
         k_fold_validation_set['PredictedQualifyingTime'] = regression.predict(
-            X=np.array(k_fold_validation_set['OptimalFPLapTimeSeconds']).reshape(-1, 1))
+            X=np.array(k_fold_validation_set[scaled_feature_names]).reshape(-1, 1))
 
         k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
             .rank('dense', ascending=True)
@@ -431,8 +443,11 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 if __name__ == '__main__':
     timing_df = get_timing_data([2021])
-    multi_linear_scores = [score_linear_regression_model_with_drivers(timing_df, num_k_folds=5) for i in range(1000)]
-    one_feature_scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(1000)]
+
+    n_runs = 1000
+
+    multi_linear_scores = [score_linear_regression_model_with_drivers(timing_df, num_k_folds=5) for i in range(n_runs)]
+    one_feature_scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(n_runs)]
 
     plot_error_dist(pd.Series(multi_linear_scores), plot_z_score=False, error_name="Spearman's Rho")
     plot_error_dist(pd.Series(one_feature_scores), plot_z_score=False, error_name="Spearman's Rho")
