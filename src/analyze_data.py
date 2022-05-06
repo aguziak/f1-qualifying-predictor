@@ -10,6 +10,8 @@ import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 
+pd.options.mode.chained_assignment = None
+
 
 def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
     """
@@ -32,6 +34,71 @@ def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
         + optimal_lap_times['Sector2Time'] \
         + optimal_lap_times['Sector3Time']
     return optimal_lap_times
+
+
+def get_telemetry_features_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
+    event = src.get_data.get_event_data_for_session(session_year, session_round)
+    is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
+
+    retrieved_session_data = []
+
+    try:
+        fp1_session_data_df = src.get_data.get_telemetry_data_for_session(
+            session_year=session_year,
+            session_round=session_round,
+            session_identifier='FP1')
+        fp1_session_data_df['Session'] = 'FP1'
+        retrieved_session_data.append(fp1_session_data_df)
+    except fastf1.core.DataNotLoadedError:
+        print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    if not is_sprint_race_weekend:
+        """
+            There is a second free practice session on sprint race weekends, however this occurs after the traditional
+                qualifying process used for the sprint race and will not be considered
+        """
+        try:
+            fp2_session_data_df = src.get_data.get_telemetry_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP2')
+            fp2_session_data_df['Session'] = 'FP2'
+            retrieved_session_data.append(fp2_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+        try:
+            fp3_session_data_df = src.get_data.get_telemetry_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP3')
+            fp3_session_data_df['Session'] = 'FP3'
+            retrieved_session_data.append(fp3_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    print('Retrieved fastest sectors telemetry')
+
+    if len(retrieved_session_data) > 0:
+        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
+        full_testing_data_df = full_testing_data_df.reset_index(drop=True)
+
+        return full_testing_data_df
+    else:
+        return pd.DataFrame()
+
+
+def get_telemetry_features_for_year(year: int) -> pd.DataFrame:
+    event_schedule = src.get_data.get_event_schedule_for_year(year)
+    agg_df = pd.DataFrame()
+
+    for round_num in event_schedule['RoundNumber'].tolist():
+        print(f'Processing round {round_num}')
+        new_data = get_telemetry_features_for_race_weekend(year, round_num)
+        if len(new_data) > 0:
+            agg_df = pd.concat([agg_df, new_data], axis=0)
+
+    return agg_df
 
 
 def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
@@ -442,7 +509,45 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 
 if __name__ == '__main__':
+    # telemetry_df = get_telemetry_features_for_year(2021)
+    telemetry_df = pd.read_csv('../fastf1_cache.nosync/telemetry_df.csv')
+
+    features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round', 'sector']).agg({
+        'avg_accel_increase_per_throttle_input': np.max,
+        'avg_braking_speed_decrease': np.min,
+        'max_speed': np.max,
+        'min_speed': np.max,
+        'sector': 'first',
+        'year': 'first',
+        'round': 'first',
+        'driver_num': 'first',
+        'driver': 'first'
+    }).reset_index(drop=True)
+
+
+    def concat_all_sectors_features(df: pd.DataFrame):
+        columns_to_concat = ['avg_accel_increase_per_throttle_input',
+                             'avg_braking_speed_decrease',
+                             'max_speed',
+                             'min_speed']
+        static_columns = ['year', 'round', 'driver_num', 'driver']
+
+        dynamic_col_df = df[columns_to_concat]
+        return pd.concat([dynamic_col_df.add_suffix('_s1').iloc[0],
+                          dynamic_col_df.add_suffix('_s2').iloc[1],
+                          dynamic_col_df.add_suffix('_s3').iloc[2],
+                          df[static_columns].iloc[0]], axis=0)
+
+
+    features_df = features_df.groupby(by=['driver_num', 'year', 'round']).apply(concat_all_sectors_features)
+
     timing_df = get_timing_data([2021])
+    timing_df = timing_df.rename(columns={'DriverNumber': 'driver_num', 'Year': 'year', 'Round': 'round'})
+
+    timing_df = timing_df.reset_index(drop=True)
+    features_df = features_df.reset_index(drop=True)
+
+    merged_features_df = features_df.merge(timing_df, on=['driver_num', 'year', 'round']).dropna()
 
     n_runs = 1000
 
