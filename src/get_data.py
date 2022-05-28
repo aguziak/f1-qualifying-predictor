@@ -178,16 +178,57 @@ def get_telemetry_data_for_session(
 
     def process_telemetry_for_driver_into_features(telemetry_group_df) -> pd.Series:
         filtered_telemetry_group_df = telemetry_group_df.dropna(
-            subset=['Speed', 'Throttle', 'Brake', 'session_time_seconds'])
+            subset=['Speed', 'Throttle', 'Brake', 'session_time_seconds', 'X', 'Y', 'Z'])
         filtered_telemetry_group_df = filtered_telemetry_group_df.loc[filtered_telemetry_group_df['Source'] == 'car']
 
         filtered_telemetry_group_df['delta_speed'] = filtered_telemetry_group_df['Speed'].diff(periods=1)
         filtered_telemetry_group_df['delta_time'] = filtered_telemetry_group_df['session_time_seconds'].diff(periods=1)
+        filtered_telemetry_group_df['dx'] = filtered_telemetry_group_df['X'].diff(periods=1)
+        filtered_telemetry_group_df['dy'] = filtered_telemetry_group_df['Y'].diff(periods=1)
+        filtered_telemetry_group_df['dz'] = filtered_telemetry_group_df['Z'].diff(periods=1)
 
-        filtered_telemetry_group_df = filtered_telemetry_group_df.dropna(subset=['delta_speed', 'delta_time'])
+        filtered_telemetry_group_df = filtered_telemetry_group_df \
+            .dropna(subset=['delta_speed', 'delta_time', 'dx', 'dy', 'dz'])
+
+        filtered_telemetry_group_df['d2x'] = filtered_telemetry_group_df['dx'].diff(periods=1)
+        filtered_telemetry_group_df['d2y'] = filtered_telemetry_group_df['dy'].diff(periods=1)
+        filtered_telemetry_group_df['d2z'] = filtered_telemetry_group_df['dz'].diff(periods=1)
+
+        filtered_telemetry_group_df = filtered_telemetry_group_df \
+            .dropna(subset=['d2x', 'd2y', 'd2z'])
 
         filtered_telemetry_group_df['acceleration'] = \
             filtered_telemetry_group_df['delta_speed'] / filtered_telemetry_group_df['delta_time']
+
+        filtered_telemetry_group_df['dx_dt'] = \
+            filtered_telemetry_group_df['dx'] / filtered_telemetry_group_df['delta_time']
+        filtered_telemetry_group_df['dy_dt'] = \
+            filtered_telemetry_group_df['dy'] / filtered_telemetry_group_df['delta_time']
+        filtered_telemetry_group_df['dz_dt'] = \
+            filtered_telemetry_group_df['dz'] / filtered_telemetry_group_df['delta_time']
+
+        filtered_telemetry_group_df['theta'] = np.arctan(filtered_telemetry_group_df['dy_dt'] /
+                                                         filtered_telemetry_group_df['dx_dt'])
+
+        filtered_telemetry_group_df['d2x_dt2'] = \
+            filtered_telemetry_group_df['d2x'] / filtered_telemetry_group_df['delta_time']
+        filtered_telemetry_group_df['d2y_dt2'] = \
+            filtered_telemetry_group_df['d2y'] / filtered_telemetry_group_df['delta_time']
+        filtered_telemetry_group_df['d2z_dt2'] = \
+            filtered_telemetry_group_df['d2z'] / filtered_telemetry_group_df['delta_time']
+
+        """
+            Rotate the acceleration vector so that the x component is parallel to the velocity vector of the car
+                and the y component is perpendicular to the velocity vector. This way, the y value can
+                be used to understand turning acceleration. The values are of unknown units, since the X, Y, Z
+                columns in the telemetry data have unknown units
+        """
+        filtered_telemetry_group_df['straight_line_geometric_accel'] = \
+            filtered_telemetry_group_df['d2x_dt2'] * np.cos(filtered_telemetry_group_df['theta']) + \
+            filtered_telemetry_group_df['d2y_dt2'] * np.sin(filtered_telemetry_group_df['theta'])
+        filtered_telemetry_group_df['turning_geometric_accel'] = \
+            filtered_telemetry_group_df['d2y_dt2'] * np.cos(filtered_telemetry_group_df['theta']) - \
+            filtered_telemetry_group_df['d2x_dt2'] * np.sin(filtered_telemetry_group_df['theta'])
 
         throttle_applied_sub_df = filtered_telemetry_group_df.loc[(filtered_telemetry_group_df['Throttle'] > 0) &
                                                                   (~filtered_telemetry_group_df['Brake'])]
@@ -203,16 +244,25 @@ def get_telemetry_data_for_session(
         median_accel_increase_per_throttle_input = \
             np.median(throttle_applied_sub_df['acceleration'] / throttle_applied_sub_df['Throttle'])
 
+        avg_accel = np.mean(throttle_applied_sub_df['acceleration'])
+        median_accel = np.median(throttle_applied_sub_df['acceleration'])
+
         avg_braking_speed_decrease = np.mean(brakes_applied_sub_df['delta_speed'])
         median_braking_speed_decrease = np.median(brakes_applied_sub_df['delta_speed'])
 
         max_speed = max(filtered_telemetry_group_df['Speed'])
         min_speed = min(filtered_telemetry_group_df['Speed'])
         median_speed = np.median(filtered_telemetry_group_df['Speed'])
+        first_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].to_numpy().quantile(.25)
+        third_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].to_numpy().quantile(.75)
 
         series = pd.Series({
             'avg_accel_increase_per_throttle_input': avg_accel_increase_per_throttle_input,
             'avg_braking_speed_decrease': avg_braking_speed_decrease,
+            'avg_accel': avg_accel,
+            'median_accel': median_accel,
+            'first_quartile_turning_accel': first_quartile_turning_accel,
+            'third_quartile_turning_accel': third_quartile_turning_accel,
             'max_speed': max_speed,
             'min_speed': min_speed,
             'median_speed': median_speed,

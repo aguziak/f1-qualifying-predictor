@@ -491,7 +491,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 
 def run_analysis():
-    telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=False)
+    telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=True)
 
     features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round']).agg({
         'avg_accel_increase_per_throttle_input': np.max,
