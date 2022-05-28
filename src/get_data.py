@@ -91,12 +91,6 @@ def get_telemetry_data_for_session(
 
         lap_df.index = pd.IntervalIndex(intervals_array)
 
-        # driver_number = group_df.iloc[0]['DriverNumber']
-        #
-        # fastest_s1 = group_df.sort_values(by='Sector1Time', ascending=True).iloc[0]
-        # fastest_s2 = group_df.sort_values(by='Sector2Time', ascending=True).iloc[0]
-        # fastest_s3 = group_df.sort_values(by='Sector3Time', ascending=True).iloc[0]
-
         try:
             telemetry_df = pd.DataFrame(session.laps.pick_driver(driver).get_telemetry())
         except KeyError:
@@ -182,30 +176,6 @@ def get_telemetry_data_for_session(
 
         return telemetry_df
 
-        # s1_telemetry_df = telemetry_df.loc[
-        #     (telemetry_df['SessionTime'] >= fastest_s1['LapStartTime']) &
-        #     (telemetry_df['SessionTime'] <= fastest_s1['Sector1SessionTime'])]
-        # s1_telemetry_df['Sector'] = 1
-        # s1_telemetry_df['SectorTime'] = fastest_s1['Sector1Time']
-        #
-        # s2_telemetry_df = telemetry_df.loc[
-        #     (telemetry_df['SessionTime'] >= fastest_s2['Sector1SessionTime']) &
-        #     (telemetry_df['SessionTime'] <= fastest_s2['Sector2SessionTime'])]
-        # s2_telemetry_df['Sector'] = 2
-        # s2_telemetry_df['SectorTime'] = fastest_s1['Sector2Time']
-        #
-        # s3_telemetry_df = telemetry_df.loc[
-        #     (telemetry_df['SessionTime'] >= fastest_s3['Sector2SessionTime']) &
-        #     (telemetry_df['SessionTime'] <= fastest_s3['Sector3SessionTime'])]
-        # s3_telemetry_df['Sector'] = 3
-        # s3_telemetry_df['SectorTime'] = fastest_s1['Sector3Time']
-        #
-        # fastest_telemetry_df = pd.concat([s1_telemetry_df, s2_telemetry_df, s3_telemetry_df], axis=0)
-        # fastest_telemetry_df['Driver'] = driver
-        # fastest_telemetry_df['DriverNumber'] = driver_number
-        #
-        # return fastest_telemetry_df
-
     def process_telemetry_for_driver_into_features(telemetry_group_df) -> pd.Series:
         filtered_telemetry_group_df = telemetry_group_df.dropna(
             subset=['Speed', 'Throttle', 'Brake', 'session_time_seconds'])
@@ -230,15 +200,24 @@ def get_telemetry_data_for_session(
 
         avg_accel_increase_per_throttle_input = \
             np.mean(throttle_applied_sub_df['acceleration'] / throttle_applied_sub_df['Throttle'])
+        median_accel_increase_per_throttle_input = \
+            np.median(throttle_applied_sub_df['acceleration'] / throttle_applied_sub_df['Throttle'])
+
         avg_braking_speed_decrease = np.mean(brakes_applied_sub_df['delta_speed'])
+        median_braking_speed_decrease = np.median(brakes_applied_sub_df['delta_speed'])
+
         max_speed = max(filtered_telemetry_group_df['Speed'])
         min_speed = min(filtered_telemetry_group_df['Speed'])
+        median_speed = np.median(filtered_telemetry_group_df['Speed'])
 
         series = pd.Series({
             'avg_accel_increase_per_throttle_input': avg_accel_increase_per_throttle_input,
             'avg_braking_speed_decrease': avg_braking_speed_decrease,
             'max_speed': max_speed,
             'min_speed': min_speed,
+            'median_speed': median_speed,
+            'median_braking_speed_decrease': median_braking_speed_decrease,
+            'median_accel_increase_per_throttle_input': median_accel_increase_per_throttle_input,
             'driver': filtered_telemetry_group_df.iloc[0]['Driver'],
             'driver_num': filtered_telemetry_group_df.iloc[0]['DriverNumber'],
             'year': filtered_telemetry_group_df.iloc[0]['year'],

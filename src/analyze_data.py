@@ -1,3 +1,5 @@
+import os.path
+
 import fastf1
 from typing import List
 from sklearn.linear_model import LinearRegression
@@ -89,7 +91,14 @@ def get_telemetry_features_for_race_weekend(session_year: int, session_round: in
         return pd.DataFrame()
 
 
-def get_telemetry_features_for_year(year: int) -> pd.DataFrame:
+def get_telemetry_features_for_year(year: int, rebuild_cache=False) -> pd.DataFrame:
+    df_cache_path = '../fastf1_cache.nosync/telemetry_df.csv'
+    cached_file_exists = os.path.isfile(df_cache_path)
+
+    if cached_file_exists and not rebuild_cache:
+        telemetry_df = pd.read_csv(df_cache_path)
+        return telemetry_df
+
     event_schedule = src.get_data.get_event_schedule_for_year(year)
     agg_df = pd.DataFrame()
 
@@ -98,6 +107,8 @@ def get_telemetry_features_for_year(year: int) -> pd.DataFrame:
         new_data = get_telemetry_features_for_race_weekend(year, round_num)
         if len(new_data) > 0:
             agg_df = pd.concat([agg_df, new_data], axis=0)
+
+    agg_df.to_csv(df_cache_path)
 
     return agg_df
 
@@ -480,14 +491,16 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 
 def run_analysis():
-    # telemetry_df = get_telemetry_features_for_year(2021)
-    telemetry_df = pd.read_csv('../fastf1_cache.nosync/telemetry_df.csv')
+    telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=False)
 
     features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round', 'sector']).agg({
         'avg_accel_increase_per_throttle_input': np.max,
+        'median_accel_increase_per_throttle_input': np.max,
         'avg_braking_speed_decrease': np.min,
+        'median_braking_speed_decrease': np.min,
         'max_speed': np.max,
         'min_speed': np.max,
+        'median_speed': np.max,
         'sector': 'first',
         'year': 'first',
         'round': 'first',
@@ -499,7 +512,10 @@ def run_analysis():
         columns_to_concat = ['avg_accel_increase_per_throttle_input',
                              'avg_braking_speed_decrease',
                              'max_speed',
-                             'min_speed']
+                             'min_speed',
+                             'median_accel_increase_per_throttle_input',
+                             'median_braking_speed_decrease',
+                             'median_speed']
         static_columns = ['year', 'round', 'driver_num', 'driver']
 
         dynamic_col_df = df[columns_to_concat]
@@ -555,6 +571,27 @@ def run_analysis():
         round_df['scaled_min_speed_s3'] = scaler.fit_transform(
             round_df['min_speed_s3'].to_numpy().reshape(-1, 1))
 
+        round_df['scaled_median_accel_s1'] = scaler.fit_transform(
+            round_df['median_accel_increase_per_throttle_input_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_accel_s2'] = scaler.fit_transform(
+            round_df['median_accel_increase_per_throttle_input_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_accel_s3'] = scaler.fit_transform(
+            round_df['median_accel_increase_per_throttle_input_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_median_braking_speed_s1'] = scaler.fit_transform(
+            round_df['median_braking_speed_decrease_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_braking_speed_s2'] = scaler.fit_transform(
+            round_df['median_braking_speed_decrease_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_braking_speed_s3'] = scaler.fit_transform(
+            round_df['median_braking_speed_decrease_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_median_speed_s1'] = scaler.fit_transform(
+            round_df['median_speed_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_speed_s2'] = scaler.fit_transform(
+            round_df['median_speed_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_median_speed_s3'] = scaler.fit_transform(
+            round_df['median_speed_s3'].to_numpy().reshape(-1, 1))
+
         round_df['scaled_optimal_fp_lap_time'] = scaler.fit_transform(
             round_df['OptimalFPLapTimeSeconds'].to_numpy().reshape(-1, 1))
         round_df['scaled_single_fp_lap_time'] = scaler.fit_transform(
@@ -565,19 +602,28 @@ def run_analysis():
 
     feature_col_names = [
         'scaled_optimal_fp_lap_time',
-        'scaled_single_fp_lap_time',
-        'scaled_accel_per_throttle_s1',
-        'scaled_accel_per_throttle_s2',
-        'scaled_accel_per_throttle_s3',
-        'scaled_avg_braking_speed_decrease_s1',
-        'scaled_avg_braking_speed_decrease_s2',
-        'scaled_avg_braking_speed_decrease_s3',
-        'scaled_max_speed_s1',
-        'scaled_max_speed_s2',
-        'scaled_max_speed_s3',
-        'scaled_min_speed_s1',
-        'scaled_min_speed_s2',
-        'scaled_min_speed_s3'
+        # 'scaled_single_fp_lap_time',
+        # 'scaled_accel_per_throttle_s1',
+        # 'scaled_accel_per_throttle_s2',
+        # 'scaled_accel_per_throttle_s3',
+        # 'scaled_avg_braking_speed_decrease_s1',
+        # 'scaled_avg_braking_speed_decrease_s2',
+        # 'scaled_avg_braking_speed_decrease_s3',
+        # 'scaled_max_speed_s1',
+        # 'scaled_max_speed_s2',
+        # 'scaled_max_speed_s3',
+        # 'scaled_min_speed_s1',
+        # 'scaled_min_speed_s2',
+        # 'scaled_min_speed_s3',
+        'scaled_median_accel_s1',
+        'scaled_median_accel_s2',
+        'scaled_median_accel_s3',
+        'scaled_median_braking_speed_s1',
+        'scaled_median_braking_speed_s2',
+        'scaled_median_braking_speed_s3',
+        'scaled_median_speed_s1',
+        'scaled_median_speed_s2',
+        'scaled_median_speed_s3'
     ]
 
     categorical_col_names = [
