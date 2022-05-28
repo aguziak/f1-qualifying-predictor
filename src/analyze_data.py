@@ -1,6 +1,7 @@
 import fastf1
 from typing import List
 from sklearn.linear_model import LinearRegression
+from sklearn.svm import SVR
 
 import src.get_data
 import pandas as pd
@@ -351,6 +352,57 @@ def score_linear_regression_model(df: pd.DataFrame,
     return avg_score
 
 
+def score_svr_model(df: pd.DataFrame,
+                    feature_col_names: List[str],
+                    label_col_name: str,
+                    num_k_folds=5) -> float:
+    """
+    Create and evaluate the SVM regression model
+
+    Args:
+        df (DataFrame): The data for which to train and score the linear regression model. The features in the
+            DataFrame must already be scaled, this method does not perform any scaling
+        feature_col_names (List): List of strings representing the columns to use as features
+        label_col_name (str): Name of the column containing the ground truth value, in this case the
+            rank of the driver in the final qualifying classification
+        num_k_folds (int): The number of cross-validation folds to use
+
+    Returns:
+        float: The averaged r2 score for the model given the n k folds
+
+    """
+
+    k_fold_scores = list()
+
+    group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
+
+    for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
+        k_fold_training_set = df.iloc[training_index]
+        k_fold_validation_set = df.iloc[validation_index]
+
+        svr = SVR()
+
+        svr.fit(X=np.array(k_fold_training_set[feature_col_names]),
+                y=k_fold_training_set[label_col_name])
+
+        k_fold_validation_set['predicted_qualifying_time'] = svr.predict(
+            X=np.array(k_fold_validation_set[feature_col_names]))
+
+        k_fold_validation_set['predicted_qualifying_rank'] = \
+            k_fold_validation_set.groupby('year_round')['predicted_qualifying_time'].rank('dense', ascending=True)
+        k_fold_validation_set['qualifying_rank'] = \
+            k_fold_validation_set.groupby('year_round')['qualifying_time'].rank('dense', ascending=True)
+
+        k_fold_score = np.mean(k_fold_validation_set[['year_round', 'predicted_qualifying_rank', 'qualifying_rank']]
+                               .groupby(by='year_round')
+                               .apply(spearman_rho))
+
+        k_fold_scores.append(k_fold_score)
+
+    avg_score = np.average(k_fold_scores)
+    return avg_score
+
+
 def get_timing_data(years: List[int]) -> pd.DataFrame:
     """
     Retrieves the necessary data for modeling
@@ -572,8 +624,13 @@ def run_analysis():
                                                                     feature_col_names,
                                                                     regressor_label_col_name,
                                                                     num_k_folds=5) for _ in range(n_runs)]
+    svr_model_scores = [score_svr_model(merged_features_df,
+                                        feature_col_names,
+                                        regressor_label_col_name,
+                                        num_k_folds=5) for _ in range(n_runs)]
 
     plot_error_dist(pd.Series(linear_regression_model_scores), plot_z_score=False, error_name="Spearman's Rho")
+    plot_error_dist(pd.Series(svr_model_scores), plot_z_score=False, error_name="Spearman's Rho")
 
 
 if __name__ == '__main__':
