@@ -539,98 +539,52 @@ def run_analysis():
     merged_features_df['qualifying_rank'] = merged_features_df.groupby('round')['QualifyingTimeSeconds'] \
         .rank('dense', ascending=True)
     merged_features_df = merged_features_df.rename(columns={'QualifyingTimeSeconds': 'qualifying_time'})
+    merged_features_df = merged_features_df.astype({'year': int, 'round': int})
+    merged_features_df['year_round'] = merged_features_df['year'].astype(str) + '_' + merged_features_df[
+        'round'].astype(str)
 
-    scaler = QuantileTransformer()
-
-    def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
-        round_df['scaled_accel_per_throttle_s1'] = scaler.fit_transform(
-            round_df['avg_accel_increase_per_throttle_input_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_accel_per_throttle_s2'] = scaler.fit_transform(
-            round_df['avg_accel_increase_per_throttle_input_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_accel_per_throttle_s3'] = scaler.fit_transform(
-            round_df['avg_accel_increase_per_throttle_input_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_avg_braking_speed_decrease_s1'] = scaler.fit_transform(
-            round_df['avg_braking_speed_decrease_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_avg_braking_speed_decrease_s2'] = scaler.fit_transform(
-            round_df['avg_braking_speed_decrease_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_avg_braking_speed_decrease_s3'] = scaler.fit_transform(
-            round_df['avg_braking_speed_decrease_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_max_speed_s1'] = scaler.fit_transform(
-            round_df['max_speed_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_max_speed_s2'] = scaler.fit_transform(
-            round_df['max_speed_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_max_speed_s3'] = scaler.fit_transform(
-            round_df['max_speed_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_min_speed_s1'] = scaler.fit_transform(
-            round_df['min_speed_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_min_speed_s2'] = scaler.fit_transform(
-            round_df['min_speed_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_min_speed_s3'] = scaler.fit_transform(
-            round_df['min_speed_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_median_accel_s1'] = scaler.fit_transform(
-            round_df['median_accel_increase_per_throttle_input_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_accel_s2'] = scaler.fit_transform(
-            round_df['median_accel_increase_per_throttle_input_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_accel_s3'] = scaler.fit_transform(
-            round_df['median_accel_increase_per_throttle_input_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_median_braking_speed_s1'] = scaler.fit_transform(
-            round_df['median_braking_speed_decrease_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_braking_speed_s2'] = scaler.fit_transform(
-            round_df['median_braking_speed_decrease_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_braking_speed_s3'] = scaler.fit_transform(
-            round_df['median_braking_speed_decrease_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_median_speed_s1'] = scaler.fit_transform(
-            round_df['median_speed_s1'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_speed_s2'] = scaler.fit_transform(
-            round_df['median_speed_s2'].to_numpy().reshape(-1, 1))
-        round_df['scaled_median_speed_s3'] = scaler.fit_transform(
-            round_df['median_speed_s3'].to_numpy().reshape(-1, 1))
-
-        round_df['scaled_optimal_fp_lap_time'] = scaler.fit_transform(
-            round_df['OptimalFPLapTimeSeconds'].to_numpy().reshape(-1, 1))
-        round_df['scaled_single_fp_lap_time'] = scaler.fit_transform(
-            round_df['FastestSingleFPLapTimeSeconds'].to_numpy().reshape(-1, 1))
-        return round_df
-
-    merged_features_df = merged_features_df.groupby('round').apply(scale_features_to_round)
-
-    feature_col_names = [
-        'scaled_optimal_fp_lap_time',
-        # 'scaled_single_fp_lap_time',
-        # 'scaled_accel_per_throttle_s1',
-        # 'scaled_accel_per_throttle_s2',
-        # 'scaled_accel_per_throttle_s3',
-        # 'scaled_avg_braking_speed_decrease_s1',
-        # 'scaled_avg_braking_speed_decrease_s2',
-        # 'scaled_avg_braking_speed_decrease_s3',
-        # 'scaled_max_speed_s1',
-        # 'scaled_max_speed_s2',
-        # 'scaled_max_speed_s3',
-        # 'scaled_min_speed_s1',
-        # 'scaled_min_speed_s2',
-        # 'scaled_min_speed_s3',
-        'scaled_median_accel_s1',
-        'scaled_median_accel_s2',
-        'scaled_median_accel_s3',
-        'scaled_median_braking_speed_s1',
-        'scaled_median_braking_speed_s2',
-        'scaled_median_braking_speed_s3',
-        'scaled_median_speed_s1',
-        'scaled_median_speed_s2',
-        'scaled_median_speed_s3'
+    features_to_scale = [
+        'avg_accel_increase_per_throttle_input_s1',
+        'avg_accel_increase_per_throttle_input_s2',
+        'avg_accel_increase_per_throttle_input_s3',
+        'avg_braking_speed_decrease_s1',
+        'avg_braking_speed_decrease_s2',
+        'avg_braking_speed_decrease_s3',
+        'max_speed_s1',
+        'max_speed_s2',
+        'max_speed_s3',
+        'min_speed_s1',
+        'min_speed_s2',
+        'min_speed_s3',
+        'median_accel_increase_per_throttle_input_s1',
+        'median_accel_increase_per_throttle_input_s2',
+        'median_accel_increase_per_throttle_input_s3',
+        'median_braking_speed_decrease_s1',
+        'median_braking_speed_decrease_s2',
+        'median_braking_speed_decrease_s3',
+        'median_speed_s1',
+        'median_speed_s2',
+        'median_speed_s3',
+        'OptimalFPLapTimeSeconds',
+        'FastestSingleFPLapTimeSeconds'
     ]
 
+    scaled_features_names = [feature_name + '_scaled' for feature_name in features_to_scale]
+
+    def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
+        scaler = QuantileTransformer()
+        scaled_features_df = pd.DataFrame(scaler.fit_transform(round_df[features_to_scale]))
+        scaled_features_df.columns = [feature_name + '_scaled' for feature_name
+                                      in scaler.get_feature_names_out().tolist()]
+        return pd.concat([round_df.reset_index(drop=True), scaled_features_df], axis=1)
+
+    merged_features_df = merged_features_df.groupby('year_round').apply(scale_features_to_round)
+
+    feature_col_names = scaled_features_names
     categorical_col_names = [
         'driver'
     ]
 
-    classifier_label_col_name = 'qualifying_rank'
     regressor_label_col_name = 'qualifying_time'
 
     merged_features_df = merged_features_df.loc[(abs(merged_features_df['TimeDifferenceSecondsQSingle']) < 5)
@@ -660,10 +614,6 @@ def run_analysis():
 
     n_runs = 1000
 
-    merged_features_df = merged_features_df.astype({'year': int, 'round': int})
-    merged_features_df['year_round'] = merged_features_df['year'].astype(str) + '_' + merged_features_df[
-        'round'].astype(str)
-
     merged_features_df = merged_features_df[feature_col_names + [regressor_label_col_name, 'year_round']]
 
     linear_regression_model_scores = [score_linear_regression_model(merged_features_df,
@@ -675,8 +625,8 @@ def run_analysis():
                                         regressor_label_col_name,
                                         num_k_folds=5) for _ in range(n_runs)]
 
-    plot_error_dist(pd.Series(linear_regression_model_scores), plot_z_score=False, error_name="Spearman's Rho")
-    plot_error_dist(pd.Series(svr_model_scores), plot_z_score=False, error_name="Spearman's Rho")
+    plot_error_dist(pd.Series(linear_regression_model_scores), plot_z_score=False, error_name="Linear Spearman's Rho")
+    plot_error_dist(pd.Series(svr_model_scores), plot_z_score=False, error_name="SVR Spearman's Rho")
 
 
 if __name__ == '__main__':
