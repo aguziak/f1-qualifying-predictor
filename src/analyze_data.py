@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler, QuantileTransformer
 
 pd.options.mode.chained_assignment = None
 
@@ -540,7 +540,7 @@ def run_analysis():
         .rank('dense', ascending=True)
     merged_features_df = merged_features_df.rename(columns={'QualifyingTimeSeconds': 'qualifying_time'})
 
-    scaler = MinMaxScaler()
+    scaler = QuantileTransformer()
 
     def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
         round_df['scaled_accel_per_throttle_s1'] = scaler.fit_transform(
