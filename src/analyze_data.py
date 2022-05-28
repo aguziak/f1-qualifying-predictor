@@ -493,7 +493,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 def run_analysis():
     telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=False)
 
-    features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round', 'sector']).agg({
+    features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round']).agg({
         'avg_accel_increase_per_throttle_input': np.max,
         'median_accel_increase_per_throttle_input': np.max,
         'avg_braking_speed_decrease': np.min,
@@ -507,24 +507,6 @@ def run_analysis():
         'driver_num': 'first',
         'driver': 'first'
     }).reset_index(drop=True)
-
-    def concat_all_sectors_features(df: pd.DataFrame):
-        columns_to_concat = ['avg_accel_increase_per_throttle_input',
-                             'avg_braking_speed_decrease',
-                             'max_speed',
-                             'min_speed',
-                             'median_accel_increase_per_throttle_input',
-                             'median_braking_speed_decrease',
-                             'median_speed']
-        static_columns = ['year', 'round', 'driver_num', 'driver']
-
-        dynamic_col_df = df[columns_to_concat]
-        return pd.concat([dynamic_col_df.add_suffix('_s1').iloc[0],
-                          dynamic_col_df.add_suffix('_s2').iloc[1],
-                          dynamic_col_df.add_suffix('_s3').iloc[2],
-                          df[static_columns].iloc[0]], axis=0)
-
-    features_df = features_df.groupby(by=['driver_num', 'year', 'round']).apply(concat_all_sectors_features)
 
     timing_df = get_timing_data([2021])
     timing_df = timing_df.rename(columns={'DriverNumber': 'driver_num', 'Year': 'year', 'Round': 'round'})
@@ -544,27 +526,13 @@ def run_analysis():
         'round'].astype(str)
 
     features_to_scale = [
-        'avg_accel_increase_per_throttle_input_s1',
-        'avg_accel_increase_per_throttle_input_s2',
-        'avg_accel_increase_per_throttle_input_s3',
-        'avg_braking_speed_decrease_s1',
-        'avg_braking_speed_decrease_s2',
-        'avg_braking_speed_decrease_s3',
-        'max_speed_s1',
-        'max_speed_s2',
-        'max_speed_s3',
-        'min_speed_s1',
-        'min_speed_s2',
-        'min_speed_s3',
-        'median_accel_increase_per_throttle_input_s1',
-        'median_accel_increase_per_throttle_input_s2',
-        'median_accel_increase_per_throttle_input_s3',
-        'median_braking_speed_decrease_s1',
-        'median_braking_speed_decrease_s2',
-        'median_braking_speed_decrease_s3',
-        'median_speed_s1',
-        'median_speed_s2',
-        'median_speed_s3',
+        'avg_accel_increase_per_throttle_input',
+        'avg_braking_speed_decrease',
+        'max_speed',
+        'min_speed',
+        'median_accel_increase_per_throttle_input',
+        'median_braking_speed_decrease',
+        'median_speed',
         'OptimalFPLapTimeSeconds',
         'FastestSingleFPLapTimeSeconds'
     ]
