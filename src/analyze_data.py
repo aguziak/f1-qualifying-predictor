@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler
 
 pd.options.mode.chained_assignment = None
 
@@ -294,13 +294,13 @@ def spearman_rho(predictions_df: pd.DataFrame) -> float:
         float: The Spearman's rank coefficient for the provided lists
     """
     n_observations = len(predictions_df)
-    rank_differences_sq = (predictions_df['PredictedRank'] - predictions_df['TrueRank']) ** 2
+    rank_differences_sq = (predictions_df['predicted_qualifying_rank'] - predictions_df['qualifying_rank']) ** 2
 
     s_r = (1. - (6. * np.sum(rank_differences_sq)) / (n_observations * (n_observations ** 2. - 1.)))
     return s_r
 
 
-def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) -> float:
+def score_svr_model(df: pd.DataFrame, num_k_folds=5) -> float:
     """
 
     Args:
@@ -310,7 +310,7 @@ def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) 
     Returns:
 
     """
-    print('Running multiple linear regression model with drivers as features')
+    print('Running SVR model')
 
     df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
     """
@@ -356,8 +356,6 @@ def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) 
 
         k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
             .rank('dense', ascending=True)
-        k_fold_validation_set['TrueRank'] = k_fold_validation_set.groupby('Round')['QualifyingTimeSeconds'] \
-            .rank('dense', ascending=True)
 
         k_fold_score = np.mean(k_fold_validation_set[['Round', 'PredictedRank', 'TrueRank']]
                                .groupby(by='Round')
@@ -370,65 +368,54 @@ def score_linear_regression_model_with_drivers(df: pd.DataFrame, num_k_folds=5) 
     return avg_score
 
 
-def score_linear_regression_model(df: pd.DataFrame, num_k_folds=5) -> float:
+def score_linear_regression_model(df: pd.DataFrame,
+                                  feature_col_names: List[str],
+                                  label_col_name: str,
+                                  num_k_folds=5) -> float:
     """
-    Create and evaluate the pct difference model for a given range of years, determining the average percent
-        difference for each driver individually
+    Create and evaluate the linear regression model
 
     Args:
-        df (DataFrame): The data for which to train and score the linear regression model
+        df (DataFrame): The data for which to train and score the linear regression model. The features in the
+            DataFrame must already be scaled, this method does not perform any scaling
+        feature_col_names (List): List of strings representing the columns to use as features
+        label_col_name (str): Name of the column containing the ground truth value, in this case the
+            rank of the driver in the final qualifying classification
         num_k_folds (int): The number of cross-validation folds to use
 
     Returns:
         float: The averaged r2 score for the model given the n k folds
 
     """
-    print('Running linear regression model')
-
-    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
-    """
-        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
-            occurring during one of the sessions, leading a driver to be unable to set a representative time,
-            or because of substantially different weather (wet vs. dry conditions) again causing the times
-            to not be representative. This ultimately means that the driver was unable to set a valid time
-            in at least one of the two sessions.
-    """
 
     k_fold_scores = list()
 
-    feature_names = ['OptimalFPLapTimeSeconds']
-    scaled_feature_names = [f'{feature_name}Scaled' for feature_name in feature_names]
-
-    scaler = StandardScaler()
-    df.loc[:, scaled_feature_names] = scaler.fit_transform(df[feature_names])
-
     group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
 
-    for training_index, validation_index in group_k_fold.split(df, groups=df['Round']):
+    for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
         k_fold_training_set = df.iloc[training_index]
         k_fold_validation_set = df.iloc[validation_index]
 
         regression = LinearRegression()
 
-        regression.fit(X=np.array(k_fold_training_set[scaled_feature_names]).reshape(-1, 1),
-                       y=k_fold_training_set['QualifyingTimeSeconds'])
+        regression.fit(X=np.array(k_fold_training_set[feature_col_names]),
+                       y=k_fold_training_set[label_col_name])
 
-        k_fold_validation_set['PredictedQualifyingTime'] = regression.predict(
-            X=np.array(k_fold_validation_set[scaled_feature_names]).reshape(-1, 1))
+        k_fold_validation_set['predicted_qualifying_time'] = regression.predict(
+            X=np.array(k_fold_validation_set[feature_col_names]))
 
-        k_fold_validation_set['PredictedRank'] = k_fold_validation_set.groupby('Round')['PredictedQualifyingTime'] \
-            .rank('dense', ascending=True)
-        k_fold_validation_set['TrueRank'] = k_fold_validation_set.groupby('Round')['QualifyingTimeSeconds'] \
-            .rank('dense', ascending=True)
+        k_fold_validation_set['predicted_qualifying_rank'] = \
+            k_fold_validation_set.groupby('year_round')['predicted_qualifying_time'].rank('dense', ascending=True)
+        k_fold_validation_set['qualifying_rank'] = \
+            k_fold_validation_set.groupby('year_round')['qualifying_time'].rank('dense', ascending=True)
 
-        k_fold_score = np.mean(k_fold_validation_set[['Round', 'PredictedRank', 'TrueRank']]
-                               .groupby(by='Round')
+        k_fold_score = np.mean(k_fold_validation_set[['year_round', 'predicted_qualifying_rank', 'qualifying_rank']]
+                               .groupby(by='year_round')
                                .apply(spearman_rho))
 
         k_fold_scores.append(k_fold_score)
 
     avg_score = np.average(k_fold_scores)
-    print(f'Score: {avg_score}')
     return avg_score
 
 
@@ -508,7 +495,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
     plt.show()
 
 
-if __name__ == '__main__':
+def run_analysis():
     # telemetry_df = get_telemetry_features_for_year(2021)
     telemetry_df = pd.read_csv('../fastf1_cache.nosync/telemetry_df.csv')
 
@@ -524,7 +511,6 @@ if __name__ == '__main__':
         'driver': 'first'
     }).reset_index(drop=True)
 
-
     def concat_all_sectors_features(df: pd.DataFrame):
         columns_to_concat = ['avg_accel_increase_per_throttle_input',
                              'avg_braking_speed_decrease',
@@ -538,7 +524,6 @@ if __name__ == '__main__':
                           dynamic_col_df.add_suffix('_s3').iloc[2],
                           df[static_columns].iloc[0]], axis=0)
 
-
     features_df = features_df.groupby(by=['driver_num', 'year', 'round']).apply(concat_all_sectors_features)
 
     timing_df = get_timing_data([2021])
@@ -547,12 +532,117 @@ if __name__ == '__main__':
     timing_df = timing_df.reset_index(drop=True)
     features_df = features_df.reset_index(drop=True)
 
-    merged_features_df = features_df.merge(timing_df, on=['driver_num', 'year', 'round']).dropna()
+    merged_features_df = features_df.merge(timing_df, on=['driver_num', 'year', 'round']) \
+        .dropna() \
+        .reset_index(drop=True)
+
+    merged_features_df['qualifying_rank'] = merged_features_df.groupby('round')['QualifyingTimeSeconds'] \
+        .rank('dense', ascending=True)
+    merged_features_df = merged_features_df.rename(columns={'QualifyingTimeSeconds': 'qualifying_time'})
+
+    scaler = MinMaxScaler()
+
+    def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
+        round_df['scaled_accel_per_throttle_s1'] = scaler.fit_transform(
+            round_df['avg_accel_increase_per_throttle_input_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_accel_per_throttle_s2'] = scaler.fit_transform(
+            round_df['avg_accel_increase_per_throttle_input_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_accel_per_throttle_s3'] = scaler.fit_transform(
+            round_df['avg_accel_increase_per_throttle_input_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_avg_braking_speed_decrease_s1'] = scaler.fit_transform(
+            round_df['avg_braking_speed_decrease_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_avg_braking_speed_decrease_s2'] = scaler.fit_transform(
+            round_df['avg_braking_speed_decrease_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_avg_braking_speed_decrease_s3'] = scaler.fit_transform(
+            round_df['avg_braking_speed_decrease_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_max_speed_s1'] = scaler.fit_transform(
+            round_df['max_speed_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_max_speed_s2'] = scaler.fit_transform(
+            round_df['max_speed_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_max_speed_s3'] = scaler.fit_transform(
+            round_df['max_speed_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_min_speed_s1'] = scaler.fit_transform(
+            round_df['min_speed_s1'].to_numpy().reshape(-1, 1))
+        round_df['scaled_min_speed_s2'] = scaler.fit_transform(
+            round_df['min_speed_s2'].to_numpy().reshape(-1, 1))
+        round_df['scaled_min_speed_s3'] = scaler.fit_transform(
+            round_df['min_speed_s3'].to_numpy().reshape(-1, 1))
+
+        round_df['scaled_optimal_fp_lap_time'] = scaler.fit_transform(
+            round_df['OptimalFPLapTimeSeconds'].to_numpy().reshape(-1, 1))
+        round_df['scaled_single_fp_lap_time'] = scaler.fit_transform(
+            round_df['FastestSingleFPLapTimeSeconds'].to_numpy().reshape(-1, 1))
+        return round_df
+
+    merged_features_df = merged_features_df.groupby('round').apply(scale_features_to_round)
+
+    feature_col_names = [
+        'scaled_optimal_fp_lap_time',
+        'scaled_single_fp_lap_time',
+        'scaled_accel_per_throttle_s1',
+        'scaled_accel_per_throttle_s2',
+        'scaled_accel_per_throttle_s3',
+        'scaled_avg_braking_speed_decrease_s1',
+        'scaled_avg_braking_speed_decrease_s2',
+        'scaled_avg_braking_speed_decrease_s3',
+        'scaled_max_speed_s1',
+        'scaled_max_speed_s2',
+        'scaled_max_speed_s3',
+        'scaled_min_speed_s1',
+        'scaled_min_speed_s2',
+        'scaled_min_speed_s3'
+    ]
+
+    categorical_col_names = [
+        'driver'
+    ]
+
+    classifier_label_col_name = 'qualifying_rank'
+    regressor_label_col_name = 'qualifying_time'
+
+    merged_features_df = merged_features_df.loc[(abs(merged_features_df['TimeDifferenceSecondsQSingle']) < 5)
+                                                & (abs(merged_features_df['TimeDifferenceSecondsQOpt']) < 5)]
+    """
+        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
+            occurring during one of the sessions, leading a driver to be unable to set a representative time,
+            or because of substantially different weather (wet vs. dry conditions) again causing the times
+            to not be representative. This ultimately means that the driver was unable to set a valid time
+            in at least one of the two sessions.
+    """
+
+    merged_features_df = merged_features_df.reset_index(drop=True)
+
+    one_hot_encoder = OneHotEncoder(handle_unknown='ignore', sparse=False)
+
+    for col_name in categorical_col_names:
+        categorical_values = merged_features_df[col_name].to_numpy().reshape(-1, 1)
+
+        one_hot_encoder.fit(categorical_values)
+        one_hot_cols_df = pd.DataFrame(one_hot_encoder.transform(categorical_values))
+
+        one_hot_cols_df.columns = one_hot_encoder.get_feature_names_out()
+        feature_col_names += one_hot_encoder.get_feature_names_out().tolist()
+
+        merged_features_df = pd.concat([merged_features_df, one_hot_cols_df], axis=1)
 
     n_runs = 1000
 
-    multi_linear_scores = [score_linear_regression_model_with_drivers(timing_df, num_k_folds=5) for i in range(n_runs)]
-    one_feature_scores = [score_linear_regression_model(timing_df, num_k_folds=5) for i in range(n_runs)]
+    merged_features_df = merged_features_df.astype({'year': int, 'round': int})
+    merged_features_df['year_round'] = merged_features_df['year'].astype(str) + '_' + merged_features_df[
+        'round'].astype(str)
 
-    plot_error_dist(pd.Series(multi_linear_scores), plot_z_score=False, error_name="Spearman's Rho")
-    plot_error_dist(pd.Series(one_feature_scores), plot_z_score=False, error_name="Spearman's Rho")
+    merged_features_df = merged_features_df[feature_col_names + [regressor_label_col_name, 'year_round']]
+
+    linear_regression_model_scores = [score_linear_regression_model(merged_features_df,
+                                                                    feature_col_names,
+                                                                    regressor_label_col_name,
+                                                                    num_k_folds=5) for _ in range(n_runs)]
+
+    plot_error_dist(pd.Series(linear_regression_model_scores), plot_z_score=False, error_name="Spearman's Rho")
+
+
+if __name__ == '__main__':
+    run_analysis()
