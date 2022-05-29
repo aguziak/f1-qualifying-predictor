@@ -351,7 +351,7 @@ def score_linear_regression_model(df: pd.DataFrame,
         k_fold_validation_set['predicted_qualifying_rank'] = \
             k_fold_validation_set.groupby('year_round')['predicted_qualifying_time'].rank('dense', ascending=True)
         k_fold_validation_set['qualifying_rank'] = \
-            k_fold_validation_set.groupby('year_round')['qualifying_time'].rank('dense', ascending=True)
+            k_fold_validation_set.groupby('year_round')[label_col_name].rank('dense', ascending=True)
 
         k_fold_score = np.mean(k_fold_validation_set[['year_round', 'predicted_qualifying_rank', 'qualifying_rank']]
                                .groupby(by='year_round')
@@ -402,7 +402,7 @@ def score_svr_model(df: pd.DataFrame,
         k_fold_validation_set['predicted_qualifying_rank'] = \
             k_fold_validation_set.groupby('year_round')['predicted_qualifying_time'].rank('dense', ascending=True)
         k_fold_validation_set['qualifying_rank'] = \
-            k_fold_validation_set.groupby('year_round')['qualifying_time'].rank('dense', ascending=True)
+            k_fold_validation_set.groupby('year_round')[label_col_name].rank('dense', ascending=True)
 
         k_fold_score = np.mean(k_fold_validation_set[['year_round', 'predicted_qualifying_rank', 'qualifying_rank']]
                                .groupby(by='year_round')
@@ -541,10 +541,12 @@ def run_analysis():
         'median_braking_speed_decrease',
         'median_speed',
         'OptimalFPLapTimeSeconds',
-        'FastestSingleFPLapTimeSeconds'
+        'FastestSingleFPLapTimeSeconds',
+        'qualifying_time'
     ]
 
     scaled_features_names = [feature_name + '_scaled' for feature_name in features_to_scale]
+    scaled_features_names.remove('qualifying_time_scaled')
 
     def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
         scaler = QuantileTransformer()
@@ -560,7 +562,7 @@ def run_analysis():
         'driver'
     ]
 
-    regressor_label_col_name = 'qualifying_time'
+    regressor_label_col_name = 'qualifying_time_scaled'
 
     merged_features_df = merged_features_df.loc[(abs(merged_features_df['TimeDifferenceSecondsQSingle']) < 5)
                                                 & (abs(merged_features_df['TimeDifferenceSecondsQOpt']) < 5)]
