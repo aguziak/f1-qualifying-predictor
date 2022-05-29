@@ -535,6 +535,8 @@ def run_analysis():
         'avg_braking_speed_decrease',
         'max_speed',
         'min_speed',
+        'first_quartile_turning_accel',
+        'third_quartile_turning_accel',
         'median_accel_increase_per_throttle_input',
         'median_braking_speed_decrease',
         'median_speed',
