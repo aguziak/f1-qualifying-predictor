@@ -179,21 +179,6 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     else:
         return pd.DataFrame()
 
-    optimal_lap_times_df = create_optimal_lap_times(full_testing_data_df) \
-        .sort_values(by='TotalLapTime') \
-        .astype({'DriverNumber': int})
-
-    fastest_fp_lap_times_df = full_testing_data_df[['DriverNumber', 'LapTime']] \
-        .groupby(by='DriverNumber') \
-        .apply('min') \
-        .reset_index() \
-        .astype({'DriverNumber': int}) \
-        .rename(columns={'LapTime': 'FastestSingleFPLapTime'})
-
-    optimal_lap_times_df = optimal_lap_times_df \
-        .merge(fastest_fp_lap_times_df, on=['DriverNumber']) \
-        .rename(columns={'TotalLapTime': 'OptimalFPLapTime'})
-
     qualifying_results_df = src.get_data.get_results_for_session(
         session_year=session_year,
         session_round=session_round,
@@ -225,26 +210,15 @@ def get_time_differences_for_race_weekend(session_year: int, session_round: int)
     qualifying_times = qualifying_results_df \
         .apply(select_qualifying_time, axis=1)
     qualifying_times.index.name = 'DriverNumber'
+
     qualifying_times = qualifying_times.reset_index().astype({'DriverNumber': int})
+    full_testing_data_df = full_testing_data_df.reset_index().astype({'DriverNumber': int})
 
-    time_difference_df = optimal_lap_times_df.merge(qualifying_times, on=['DriverNumber'])
-
-    time_difference_df['QualifyingTimeSeconds'] = time_difference_df['QualifyingTime'] \
+    qualifying_times['QualifyingTimeSeconds'] = qualifying_times['QualifyingTime'] \
         .apply(lambda td: td.total_seconds())
-    time_difference_df['OptimalFPLapTimeSeconds'] = time_difference_df['OptimalFPLapTime'] \
-        .apply(lambda td: td.total_seconds())
-    time_difference_df['FastestSingleFPLapTimeSeconds'] = time_difference_df['FastestSingleFPLapTime'] \
-        .apply(lambda td: td.total_seconds())
+    qualifying_times['QualifyingPosition'] = qualifying_times['QualifyingTime'].rank(method='dense', ascending=True)
 
-    time_difference_df['TimeDifferenceSecondsQOpt'] = \
-        time_difference_df['QualifyingTimeSeconds'] - time_difference_df['OptimalFPLapTimeSeconds']
-    time_difference_df['TimeDifferenceSecondsQSingle'] = \
-        time_difference_df['QualifyingTimeSeconds'] - time_difference_df['FastestSingleFPLapTimeSeconds']
-
-    time_difference_df['Year'] = session_year
-    time_difference_df['Round'] = session_round
-
-    return time_difference_df
+    return full_testing_data_df.merge(qualifying_times, on='DriverNumber', how='left')
 
 
 def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.25) -> (float, pd.DataFrame):
