@@ -491,13 +491,18 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 
 def run_analysis():
-    telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=True)
+    telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=False)
+
+    telemetry_df['first_quartile_turning_accel'] = np.abs(telemetry_df['first_quartile_turning_accel'])
+    telemetry_df['third_quartile_turning_accel'] = np.abs(telemetry_df['third_quartile_turning_accel'])
 
     features_df = telemetry_df.groupby(by=['driver_num', 'year', 'round']).agg({
         'avg_accel_increase_per_throttle_input': np.max,
         'median_accel_increase_per_throttle_input': np.max,
         'avg_braking_speed_decrease': np.min,
         'median_braking_speed_decrease': np.min,
+        'first_quartile_turning_accel': np.max,
+        'third_quartile_turning_accel': np.max,
         'max_speed': np.max,
         'min_speed': np.max,
         'median_speed': np.max,

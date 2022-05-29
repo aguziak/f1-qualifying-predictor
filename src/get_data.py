@@ -253,8 +253,8 @@ def get_telemetry_data_for_session(
         max_speed = max(filtered_telemetry_group_df['Speed'])
         min_speed = min(filtered_telemetry_group_df['Speed'])
         median_speed = np.median(filtered_telemetry_group_df['Speed'])
-        first_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].to_numpy().quantile(.25)
-        third_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].to_numpy().quantile(.75)
+        first_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].quantile(.25)
+        third_quartile_turning_accel = filtered_telemetry_group_df['turning_geometric_accel'].quantile(.75)
 
         series = pd.Series({
             'avg_accel_increase_per_throttle_input': avg_accel_increase_per_throttle_input,
