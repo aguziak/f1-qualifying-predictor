@@ -3,13 +3,14 @@ import os.path
 from typing import List
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
+from sklearn.metrics import make_scorer
 
 import src.get_data
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit, cross_val_score
 from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
@@ -66,18 +67,18 @@ def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
     return agg_df
 
 
-def spearman_rho(predictions_df: pd.DataFrame) -> float:
+def spearman_rho(y, y_pred) -> float:
     """
     Calculates Spearman's rank coefficient for two given lists
 
     Args:
-        predictions_df: DataFrame containing at least a PredictedRank and TrueRank column
+        y: DataFrame containing at least a PredictedRank and TrueRank column
 
     Returns:
         float: The Spearman's rank coefficient for the provided lists
     """
-    n_observations = len(predictions_df)
-    rank_differences_sq = (predictions_df['predicted_qualifying_rank'] - predictions_df['qualifying_rank']) ** 2
+    n_observations = len(y)
+    rank_differences_sq = (y - y_pred) ** 2
 
     s_r = (1. - (6. * np.sum(rank_differences_sq)) / (n_observations * (n_observations ** 2. - 1.)))
     return s_r
@@ -300,6 +301,14 @@ def run_analysis_pipeline():
         ('feature_preprocessing', feature_preprocessor),
         ('svm regressor', SVR())
     ])
+
+    spearman_scorer = make_scorer(spearman_rho)
+    score = cross_val_score(prediction_pipeline,
+                            features_df,
+                            features_df['true_qualifying_rank'],
+                            cv=5,
+                            groups=features_df['year_round'],
+                            scoring=spearman_scorer)
 
     prediction_pipeline.fit(features_df, features_df['true_qualifying_rank'])
 
