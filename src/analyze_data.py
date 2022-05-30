@@ -325,10 +325,10 @@ def run_analysis():
 
     def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
         scaler = QuantileTransformer()
-        scaled_features_df = pd.DataFrame(scaler.fit_transform(round_df[features_to_scale]))
-        scaled_features_df.columns = [feature_name + '_scaled' for feature_name
+        scaled_df = pd.DataFrame(scaler.fit_transform(round_df[features_to_scale]))
+        scaled_df.columns = [feature_name + '_scaled' for feature_name
                                       in scaler.get_feature_names_out().tolist()]
-        return pd.concat([round_df.reset_index(drop=True), scaled_features_df], axis=1)
+        return pd.concat([round_df.reset_index(drop=True), scaled_df], axis=1)
 
     scaled_features_df = timing_features_df.groupby('year_round').apply(scale_features_to_round)
 
