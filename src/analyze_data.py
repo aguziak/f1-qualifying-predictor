@@ -14,6 +14,7 @@ from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 
+from src.RaceWeekendQualifyingRankEstimator import RaceWeekendQualifyingRankEstimator
 from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
 from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
 
@@ -264,7 +265,8 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 def run_analysis_pipeline():
     features_df = get_timing_features(years_to_get=[2021], rebuild_cache=False)
-    y = features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
+    features_df['true_qualifying_rank'] = \
+        features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
 
     numerical_feature_columns = [
         'speed_trap_s1_max',
@@ -300,10 +302,15 @@ def run_analysis_pipeline():
         ('svm regressor', SVR())
     ])
 
-    prediction_pipeline.fit(features_df, y)
-    res = prediction_pipeline.predict(features_df)
+    prediction_pipeline.fit(features_df, features_df['true_qualifying_rank'])
 
-    print(res)
+    features_df['predicted_qualifying_quantile'] = prediction_pipeline.predict(features_df)
+    features_df['predicted_qualfiying_rank'] = \
+        features_df[['year_round', 'predicted_qualifying_quantile']] \
+            .groupby(by='year_round') \
+            .rank('dense', ascending=True)
+
+    return features_df
 
 
 def run_analysis():
