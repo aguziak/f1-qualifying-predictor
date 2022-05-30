@@ -11,7 +11,9 @@ import numpy as np
 import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
+from sklearn.pipeline import Pipeline
 
+from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
 from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
 
 pd.options.mode.chained_assignment = None
@@ -259,6 +261,27 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
     plt.show()
 
 
+def run_analysis_pipeline():
+    features_df = get_timing_features(years_to_get=[2021])
+    feature_preprocessing_pipeline = Pipeline(steps=[
+        ('race_weekend_scaler', RaceWeekendQuantileScaler()),
+    ])
+
+    numerical_feature_columns = [
+        'speed_trap_s1_max',
+        'speed_trap_s2_max',
+        'speed_trap_fl_max',
+        'speed_trap_st_max',
+        'fastest_s1_seconds',
+        'fastest_s2_seconds',
+        'fastest_s3_seconds',
+        'fastest_lap_seconds'
+    ]
+
+    res = feature_preprocessing_pipeline.fit_transform(features_df[numerical_feature_columns + ['year_round']])
+    print(res)
+
+
 def run_analysis():
     telemetry_df = get_telemetry_features_for_year(2021, rebuild_cache=False)
 
@@ -282,31 +305,7 @@ def run_analysis():
         'driver': 'first'
     }).reset_index(drop=True)
 
-    timing_df = get_timing_data([2021])
-    timing_df['year_round'] = timing_df['year'].astype(str) + '_' + timing_df['round'].astype(str)
-
-    timing_df = timing_df.reset_index(drop=True)
-
-    timing_df['Sector1TimeSeconds'] = timing_df['Sector1Time'].apply(lambda td: td.total_seconds())
-    timing_df['Sector2TimeSeconds'] = timing_df['Sector2Time'].apply(lambda td: td.total_seconds())
-    timing_df['Sector3TimeSeconds'] = timing_df['Sector3Time'].apply(lambda td: td.total_seconds())
-    timing_df['LapTimeSeconds'] = timing_df['LapTime'].apply(lambda td: td.total_seconds())
-
-    timing_features_df = timing_df.groupby(by=['Driver', 'year', 'round']).agg({
-        'SpeedI1': np.max,
-        'SpeedI2': np.max,
-        'SpeedFL': np.max,
-        'SpeedST': np.max,
-        'Sector1TimeSeconds': np.min,
-        'Sector2TimeSeconds': np.min,
-        'Sector3TimeSeconds': np.min,
-        'LapTimeSeconds': np.min,
-        'Driver': 'first',
-        'QualifyingTimeSeconds': 'first',
-        'year': 'first',
-        'round': 'first',
-        'year_round': 'first'
-    }).dropna().reset_index(drop=True)
+    timing_features_df = get_timing_features([2021])
 
     features_to_scale = [
         'SpeedI1',
@@ -327,7 +326,7 @@ def run_analysis():
         scaler = QuantileTransformer()
         scaled_df = pd.DataFrame(scaler.fit_transform(round_df[features_to_scale]))
         scaled_df.columns = [feature_name + '_scaled' for feature_name
-                                      in scaler.get_feature_names_out().tolist()]
+                             in scaler.get_feature_names_out().tolist()]
         return pd.concat([round_df.reset_index(drop=True), scaled_df], axis=1)
 
     scaled_features_df = timing_features_df.groupby('year_round').apply(scale_features_to_round)
@@ -370,5 +369,50 @@ def run_analysis():
     plot_error_dist(pd.Series(svr_model_scores), plot_z_score=False, error_name="SVR Spearman's Rho")
 
 
+def get_timing_features(years_to_get: List[int]):
+    """
+
+    Args:
+        years_to_get:
+
+    Returns:
+
+    """
+    timing_df = get_timing_data(years_to_get)
+    timing_df['year_round'] = timing_df['year'].astype(str) + '_' + timing_df['round'].astype(str)
+    timing_df = timing_df.reset_index(drop=True)
+    timing_df['Sector1TimeSeconds'] = timing_df['Sector1Time'].apply(lambda td: td.total_seconds())
+    timing_df['Sector2TimeSeconds'] = timing_df['Sector2Time'].apply(lambda td: td.total_seconds())
+    timing_df['Sector3TimeSeconds'] = timing_df['Sector3Time'].apply(lambda td: td.total_seconds())
+    timing_df['LapTimeSeconds'] = timing_df['LapTime'].apply(lambda td: td.total_seconds())
+    timing_features_df = timing_df.groupby(by=['Driver', 'year', 'round']).agg({
+        'SpeedI1': np.max,
+        'SpeedI2': np.max,
+        'SpeedFL': np.max,
+        'SpeedST': np.max,
+        'Sector1TimeSeconds': np.min,
+        'Sector2TimeSeconds': np.min,
+        'Sector3TimeSeconds': np.min,
+        'LapTimeSeconds': np.min,
+        'Driver': 'first',
+        'QualifyingTimeSeconds': 'first',
+        'year': 'first',
+        'round': 'first',
+        'year_round': 'first'
+    }).rename(columns={
+        'SpeedI1': 'speed_trap_s1_max',
+        'SpeedI2': 'speed_trap_s2_max',
+        'SpeedFL': 'speed_trap_fl_max',
+        'SpeedST': 'speed_trap_st_max',
+        'Sector1TimeSeconds': 'fastest_s1_seconds',
+        'Sector2TimeSeconds': 'fastest_s2_seconds',
+        'Sector3TimeSeconds': 'fastest_s3_seconds',
+        'LapTimeSeconds': 'fastest_lap_seconds',
+        'Driver': 'driver',
+        'QualifyingTimeSeconds': 'qualifying_time_seconds',
+    }).dropna().reset_index(drop=True)
+    return timing_features_df
+
+
 if __name__ == '__main__':
-    run_analysis()
+    run_analysis_pipeline()
