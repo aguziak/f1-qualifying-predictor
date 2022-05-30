@@ -360,3 +360,140 @@ def get_results_for_session(
 
 if __name__ == '__main__':
     get_timing_data_for_session(2021, 1, 'FP1')
+
+
+def get_time_differences_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
+    event = get_event_data_for_session(session_year, session_round)
+    is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
+
+    retrieved_session_data = []
+
+    try:
+        fp1_session_data_df = get_timing_data_for_session(
+            session_year=session_year,
+            session_round=session_round,
+            session_identifier='FP1')
+        retrieved_session_data.append(fp1_session_data_df)
+    except fastf1.core.DataNotLoadedError:
+        print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    if not is_sprint_race_weekend:
+        """
+            There is a second free practice session on sprint race weekends, however this occurs after the traditional
+                qualifying process used for the sprint race and will not be considered
+        """
+        try:
+            fp2_session_data_df = get_timing_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP2')
+            retrieved_session_data.append(fp2_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+        try:
+            fp3_session_data_df = get_timing_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP3')
+            retrieved_session_data.append(fp3_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    if len(retrieved_session_data) > 0:
+        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
+    else:
+        return pd.DataFrame()
+
+    qualifying_results_df = get_results_for_session(
+        session_year=session_year,
+        session_round=session_round,
+        session_identifier='Q'
+    )
+
+    qualifying_results_df = qualifying_results_df[['DriverNumber', 'Q1', 'Q2', 'Q3']]
+
+    def select_qualifying_time(row: pd.Series) -> pd.Series:
+        """
+        Selects the lap time that determines a driver's position on the starting grid. Picks the fastest lap time in
+            the latest qualifying session a driver participated in, even if that particular lap time was not the
+            fastest over all qualifying sessions. It is unlikely, however, that the lap time selected by this function
+             will not be the fastest overall lap set by a driver across all qualifying sessions.
+        Args:
+            row (Series): Pandas Series object representing an individual timing result obtained from fastf1
+
+        Returns:
+            Series: Series containing the lap time used to determine driver position on the starting grid.
+
+        """
+        if not pd.isna(row['Q3']):
+            return pd.Series({'QualifyingTime': row['Q3']})
+        elif not pd.isna(row['Q2']):
+            return pd.Series({'QualifyingTime': row['Q2']})
+        else:
+            return pd.Series({'QualifyingTime': row['Q1']})
+
+    qualifying_times = qualifying_results_df \
+        .apply(select_qualifying_time, axis=1)
+    qualifying_times.index.name = 'DriverNumber'
+
+    qualifying_times = qualifying_times.reset_index().astype({'DriverNumber': int})
+    full_testing_data_df = full_testing_data_df.reset_index().astype({'DriverNumber': int})
+
+    qualifying_times['QualifyingTimeSeconds'] = qualifying_times['QualifyingTime'] \
+        .apply(lambda td: td.total_seconds())
+    qualifying_times['QualifyingPosition'] = qualifying_times['QualifyingTime'].rank(method='dense', ascending=True)
+
+    return full_testing_data_df.merge(qualifying_times, on='DriverNumber', how='left')
+
+
+def get_telemetry_features_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
+    event = get_event_data_for_session(session_year, session_round)
+    is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
+
+    retrieved_session_data = []
+
+    try:
+        fp1_session_data_df = get_telemetry_data_for_session(
+            session_year=session_year,
+            session_round=session_round,
+            session_identifier='FP1')
+        fp1_session_data_df['Session'] = 'FP1'
+        retrieved_session_data.append(fp1_session_data_df)
+    except fastf1.core.DataNotLoadedError:
+        print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    if not is_sprint_race_weekend:
+        """
+            There is a second free practice session on sprint race weekends, however this occurs after the traditional
+                qualifying process used for the sprint race and will not be considered
+        """
+        try:
+            fp2_session_data_df = get_telemetry_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP2')
+            fp2_session_data_df['Session'] = 'FP2'
+            retrieved_session_data.append(fp2_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+        try:
+            fp3_session_data_df = get_telemetry_data_for_session(
+                session_year=session_year,
+                session_round=session_round,
+                session_identifier='FP3')
+            fp3_session_data_df['Session'] = 'FP3'
+            retrieved_session_data.append(fp3_session_data_df)
+        except fastf1.core.DataNotLoadedError:
+            print(f'No data for event: Year {session_year} round {session_round} FP1')
+
+    print('Retrieved fastest sectors telemetry')
+
+    if len(retrieved_session_data) > 0:
+        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
+        full_testing_data_df = full_testing_data_df.reset_index(drop=True)
+
+        return full_testing_data_df
+    else:
+        return pd.DataFrame()

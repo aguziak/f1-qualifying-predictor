@@ -1,6 +1,5 @@
 import os.path
 
-import fastf1
 from typing import List
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
@@ -11,84 +10,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler, QuantileTransformer
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
+
+from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
 
 pd.options.mode.chained_assignment = None
-
-
-def create_optimal_lap_times(lap_timing_data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Creates an optimal lap time for each driver by combining their fastest sector times for the given session into
-        one fast lap. Returns a new DataFrame and doesn't mutate the input DataFrame
-
-    Args:
-        lap_timing_data (DataFrame):
-
-    Returns:
-        DataFrame: DataFrame containing one row per driver with each row representing their optimal lap
-    """
-
-    optimal_lap_times = lap_timing_data[['DriverNumber', 'Sector1Time', 'Sector2Time', 'Sector3Time']] \
-        .groupby(by=['DriverNumber']) \
-        .agg('min') \
-        .reset_index()
-    optimal_lap_times['TotalLapTime'] = \
-        optimal_lap_times['Sector1Time'] \
-        + optimal_lap_times['Sector2Time'] \
-        + optimal_lap_times['Sector3Time']
-    return optimal_lap_times
-
-
-def get_telemetry_features_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
-    event = src.get_data.get_event_data_for_session(session_year, session_round)
-    is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
-
-    retrieved_session_data = []
-
-    try:
-        fp1_session_data_df = src.get_data.get_telemetry_data_for_session(
-            session_year=session_year,
-            session_round=session_round,
-            session_identifier='FP1')
-        fp1_session_data_df['Session'] = 'FP1'
-        retrieved_session_data.append(fp1_session_data_df)
-    except fastf1.core.DataNotLoadedError:
-        print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-    if not is_sprint_race_weekend:
-        """
-            There is a second free practice session on sprint race weekends, however this occurs after the traditional
-                qualifying process used for the sprint race and will not be considered
-        """
-        try:
-            fp2_session_data_df = src.get_data.get_telemetry_data_for_session(
-                session_year=session_year,
-                session_round=session_round,
-                session_identifier='FP2')
-            fp2_session_data_df['Session'] = 'FP2'
-            retrieved_session_data.append(fp2_session_data_df)
-        except fastf1.core.DataNotLoadedError:
-            print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-        try:
-            fp3_session_data_df = src.get_data.get_telemetry_data_for_session(
-                session_year=session_year,
-                session_round=session_round,
-                session_identifier='FP3')
-            fp3_session_data_df['Session'] = 'FP3'
-            retrieved_session_data.append(fp3_session_data_df)
-        except fastf1.core.DataNotLoadedError:
-            print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-    print('Retrieved fastest sectors telemetry')
-
-    if len(retrieved_session_data) > 0:
-        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
-        full_testing_data_df = full_testing_data_df.reset_index(drop=True)
-
-        return full_testing_data_df
-    else:
-        return pd.DataFrame()
 
 
 def get_telemetry_features_for_year(year: int, rebuild_cache=False) -> pd.DataFrame:
@@ -130,143 +56,11 @@ def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
     for round_num in event_schedule['RoundNumber'].tolist():
         print(f'Processing round {round_num}')
         new_data = get_time_differences_for_race_weekend(year, round_num)
+        new_data['round'] = round_num
         if len(new_data) > 0:
             agg_df = pd.concat([agg_df, new_data], axis=0)
 
     return agg_df
-
-
-def get_time_differences_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
-    event = src.get_data.get_event_data_for_session(session_year, session_round)
-    is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
-
-    retrieved_session_data = []
-
-    try:
-        fp1_session_data_df = src.get_data.get_timing_data_for_session(
-            session_year=session_year,
-            session_round=session_round,
-            session_identifier='FP1')
-        retrieved_session_data.append(fp1_session_data_df)
-    except fastf1.core.DataNotLoadedError:
-        print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-    if not is_sprint_race_weekend:
-        """
-            There is a second free practice session on sprint race weekends, however this occurs after the traditional
-                qualifying process used for the sprint race and will not be considered
-        """
-        try:
-            fp2_session_data_df = src.get_data.get_timing_data_for_session(
-                session_year=session_year,
-                session_round=session_round,
-                session_identifier='FP2')
-            retrieved_session_data.append(fp2_session_data_df)
-        except fastf1.core.DataNotLoadedError:
-            print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-        try:
-            fp3_session_data_df = src.get_data.get_timing_data_for_session(
-                session_year=session_year,
-                session_round=session_round,
-                session_identifier='FP3')
-            retrieved_session_data.append(fp3_session_data_df)
-        except fastf1.core.DataNotLoadedError:
-            print(f'No data for event: Year {session_year} round {session_round} FP1')
-
-    if len(retrieved_session_data) > 0:
-        full_testing_data_df = pd.concat(retrieved_session_data, axis=0)
-    else:
-        return pd.DataFrame()
-
-    qualifying_results_df = src.get_data.get_results_for_session(
-        session_year=session_year,
-        session_round=session_round,
-        session_identifier='Q'
-    )
-
-    qualifying_results_df = qualifying_results_df[['DriverNumber', 'Q1', 'Q2', 'Q3']]
-
-    def select_qualifying_time(row: pd.Series) -> pd.Series:
-        """
-        Selects the lap time that determines a driver's position on the starting grid. Picks the fastest lap time in
-            the latest qualifying session a driver participated in, even if that particular lap time was not the
-            fastest over all qualifying sessions. It is unlikely, however, that the lap time selected by this function
-             will not be the fastest overall lap set by a driver across all qualifying sessions.
-        Args:
-            row (Series): Pandas Series object representing an individual timing result obtained from fastf1
-
-        Returns:
-            Series: Series containing the lap time used to determine driver position on the starting grid.
-
-        """
-        if not pd.isna(row['Q3']):
-            return pd.Series({'QualifyingTime': row['Q3']})
-        elif not pd.isna(row['Q2']):
-            return pd.Series({'QualifyingTime': row['Q2']})
-        else:
-            return pd.Series({'QualifyingTime': row['Q1']})
-
-    qualifying_times = qualifying_results_df \
-        .apply(select_qualifying_time, axis=1)
-    qualifying_times.index.name = 'DriverNumber'
-
-    qualifying_times = qualifying_times.reset_index().astype({'DriverNumber': int})
-    full_testing_data_df = full_testing_data_df.reset_index().astype({'DriverNumber': int})
-
-    qualifying_times['QualifyingTimeSeconds'] = qualifying_times['QualifyingTime'] \
-        .apply(lambda td: td.total_seconds())
-    qualifying_times['QualifyingPosition'] = qualifying_times['QualifyingTime'].rank(method='dense', ascending=True)
-
-    return full_testing_data_df.merge(qualifying_times, on='DriverNumber', how='left')
-
-
-def run_pct_difference_model_for_years(years: List[int], test_set_pct=0.25) -> (float, pd.DataFrame):
-    """
-    Create and evaluate the pct difference model for a given range of years
-
-    Args:
-        years (int): The years for which to run the model
-        test_set_pct (float): The percentage of the data to reserve for the test set, defaults to .25
-
-    Returns:
-        Tuple: Tuple containing the average percent difference between all drivers' optimal laps and their
-            qualifying lap times, and the test DataFrame used for evaluating the model
-
-    """
-    df = pd.DataFrame()
-    for year in years:
-        df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
-
-    df = df.loc[(abs(df['TimeDifferenceSecondsQSingle']) < 5) & (abs(df['TimeDifferenceSecondsQOpt']) < 5)]
-    """
-        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
-            occurring during one of the sessions, leading a driver to be unable to set a representative time,
-            or because of substantially different weather (wet vs. dry conditions) again causing the times
-            to not be representative.
-    """
-
-    df['PctTimeDifferenceSecondsQSingle'] = (df['TimeDifferenceSecondsQSingle'] / df['QualifyingTimeSeconds']) * 100.
-    df['PctTimeDifferenceSecondsQOpt'] = (df['TimeDifferenceSecondsQOpt'] / df['QualifyingTimeSeconds']) * 100.
-
-    min_round = min(df['Round'])
-    max_round = max(df['Round'])
-
-    n_training = round(max_round * (1. - test_set_pct))
-
-    training_rounds = np.random.choice(np.arange(min_round, max_round), size=n_training, replace=False)
-
-    training_df = df.loc[df['Round'].isin(training_rounds)]
-    testing_df = df.loc[~df['Round'].isin(training_rounds)]
-
-    avg_pct_difference_optimal_lap = np.mean(training_df['PctTimeDifferenceSecondsQOpt'])
-    testing_df['PredictedQualifyingLapTimeSeconds'] = \
-        testing_df['OptimalFPLapTimeSeconds'] + \
-        testing_df['OptimalFPLapTimeSeconds'] * (avg_pct_difference_optimal_lap / 100.)
-    testing_df['BasicModelTimeErrorSeconds'] = testing_df['PredictedQualifyingLapTimeSeconds'] - testing_df[
-        'QualifyingTimeSeconds']
-
-    return avg_pct_difference_optimal_lap, testing_df.dropna()
 
 
 def spearman_rho(predictions_df: pd.DataFrame) -> float:
@@ -402,6 +196,7 @@ def get_timing_data(years: List[int]) -> pd.DataFrame:
     df = pd.DataFrame()
     for year in years:
         df = pd.concat([df, get_all_fp_timing_data_for_year(year)], axis=0)
+        df['year'] = year
     return df
 
 
@@ -488,39 +283,46 @@ def run_analysis():
     }).reset_index(drop=True)
 
     timing_df = get_timing_data([2021])
-    timing_df = timing_df.rename(columns={'DriverNumber': 'driver_num', 'Year': 'year', 'Round': 'round'})
+    timing_df['year_round'] = timing_df['year'].astype(str) + '_' + timing_df['round'].astype(str)
 
     timing_df = timing_df.reset_index(drop=True)
-    features_df = features_df.reset_index(drop=True)
 
-    merged_features_df = features_df.merge(timing_df, on=['driver_num', 'year', 'round']) \
-        .dropna() \
-        .reset_index(drop=True)
+    timing_df['Sector1TimeSeconds'] = timing_df['Sector1Time'].apply(lambda td: td.total_seconds())
+    timing_df['Sector2TimeSeconds'] = timing_df['Sector2Time'].apply(lambda td: td.total_seconds())
+    timing_df['Sector3TimeSeconds'] = timing_df['Sector3Time'].apply(lambda td: td.total_seconds())
+    timing_df['LapTimeSeconds'] = timing_df['LapTime'].apply(lambda td: td.total_seconds())
 
-    merged_features_df['qualifying_rank'] = merged_features_df.groupby('round')['QualifyingTimeSeconds'] \
-        .rank('dense', ascending=True)
-    merged_features_df = merged_features_df.rename(columns={'QualifyingTimeSeconds': 'qualifying_time'})
-    merged_features_df = merged_features_df.astype({'year': int, 'round': int})
-    merged_features_df['year_round'] = merged_features_df['year'].astype(str) + '_' + merged_features_df[
-        'round'].astype(str)
+    timing_features_df = timing_df.groupby(by=['Driver', 'year', 'round']).agg({
+        'SpeedI1': np.max,
+        'SpeedI2': np.max,
+        'SpeedFL': np.max,
+        'SpeedST': np.max,
+        'Sector1TimeSeconds': np.min,
+        'Sector2TimeSeconds': np.min,
+        'Sector3TimeSeconds': np.min,
+        'LapTimeSeconds': np.min,
+        'Driver': 'first',
+        'QualifyingPosition': 'first',
+        'QualifyingTimeSeconds': 'first',
+        'year': 'first',
+        'round': 'first',
+        'year_round': 'first'
+    }).dropna().reset_index(drop=True)
 
     features_to_scale = [
-        'avg_accel_increase_per_throttle_input',
-        'avg_braking_speed_decrease',
-        'max_speed',
-        'min_speed',
-        'first_quartile_turning_accel',
-        'third_quartile_turning_accel',
-        'median_accel_increase_per_throttle_input',
-        'median_braking_speed_decrease',
-        'median_speed',
-        'OptimalFPLapTimeSeconds',
-        'FastestSingleFPLapTimeSeconds',
-        'qualifying_time'
+        'SpeedI1',
+        'SpeedI2',
+        'SpeedFL',
+        'SpeedST',
+        'Sector1TimeSeconds',
+        'Sector2TimeSeconds',
+        'Sector3TimeSeconds',
+        'LapTimeSeconds',
+        'QualifyingTimeSeconds'
     ]
 
     scaled_features_names = [feature_name + '_scaled' for feature_name in features_to_scale]
-    scaled_features_names.remove('qualifying_time_scaled')
+    scaled_features_names.remove('QualifyingTimeSeconds_scaled')
 
     def scale_features_to_round(round_df: pd.DataFrame) -> pd.DataFrame:
         scaler = QuantileTransformer()
@@ -529,50 +331,39 @@ def run_analysis():
                                       in scaler.get_feature_names_out().tolist()]
         return pd.concat([round_df.reset_index(drop=True), scaled_features_df], axis=1)
 
-    merged_features_df = merged_features_df.groupby('year_round').apply(scale_features_to_round)
+    scaled_features_df = timing_features_df.groupby('year_round').apply(scale_features_to_round)
 
-    feature_col_names = scaled_features_names
     categorical_col_names = [
-        'driver'
+        'Driver'
     ]
 
-    regressor_label_col_name = 'qualifying_time_scaled'
+    regressor_label_col_name = 'QualifyingTimeSeconds_scaled'
 
-    merged_features_df = merged_features_df.loc[(abs(merged_features_df['TimeDifferenceSecondsQSingle']) < 5)
-                                                & (abs(merged_features_df['TimeDifferenceSecondsQOpt']) < 5)]
-    """
-        Removing differences of over 5 seconds. These are all likely to be caused by either mechanical issues
-            occurring during one of the sessions, leading a driver to be unable to set a representative time,
-            or because of substantially different weather (wet vs. dry conditions) again causing the times
-            to not be representative. This ultimately means that the driver was unable to set a valid time
-            in at least one of the two sessions.
-    """
-
-    merged_features_df = merged_features_df.reset_index(drop=True)
+    scaled_features_df = scaled_features_df.reset_index(drop=True)
 
     one_hot_encoder = OneHotEncoder(handle_unknown='ignore', sparse=False)
 
     for col_name in categorical_col_names:
-        categorical_values = merged_features_df[col_name].to_numpy().reshape(-1, 1)
+        categorical_values = scaled_features_df[col_name].to_numpy().reshape(-1, 1)
 
         one_hot_encoder.fit(categorical_values)
         one_hot_cols_df = pd.DataFrame(one_hot_encoder.transform(categorical_values))
 
         one_hot_cols_df.columns = one_hot_encoder.get_feature_names_out()
-        feature_col_names += one_hot_encoder.get_feature_names_out().tolist()
+        scaled_features_names += one_hot_encoder.get_feature_names_out().tolist()
 
-        merged_features_df = pd.concat([merged_features_df, one_hot_cols_df], axis=1)
+        scaled_features_df = pd.concat([scaled_features_df, one_hot_cols_df], axis=1)
 
     n_runs = 1000
 
-    merged_features_df = merged_features_df[feature_col_names + [regressor_label_col_name, 'year_round']]
+    scaled_features_df = scaled_features_df[scaled_features_names + [regressor_label_col_name, 'year_round']]
 
-    linear_regression_model_scores = [score_linear_regression_model(merged_features_df,
-                                                                    feature_col_names,
+    linear_regression_model_scores = [score_linear_regression_model(scaled_features_df,
+                                                                    scaled_features_names,
                                                                     regressor_label_col_name,
                                                                     num_k_folds=5) for _ in range(n_runs)]
-    svr_model_scores = [score_svr_model(merged_features_df,
-                                        feature_col_names,
+    svr_model_scores = [score_svr_model(scaled_features_df,
+                                        scaled_features_names,
                                         regressor_label_col_name,
                                         num_k_folds=5) for _ in range(n_runs)]
 
