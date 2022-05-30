@@ -14,7 +14,6 @@ from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 
-from src.RaceWeekendQualifyingRankEstimator import RaceWeekendQualifyingRankEstimator
 from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
 from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
 
