@@ -12,6 +12,7 @@ import scipy.stats
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
 
 from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
 from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
@@ -36,7 +37,7 @@ def get_telemetry_features_for_year(year: int, rebuild_cache=False) -> pd.DataFr
         if len(new_data) > 0:
             agg_df = pd.concat([agg_df, new_data], axis=0)
 
-    agg_df.to_csv(df_cache_path)
+    agg_df.to_csv(df_cache_path, index=False)
 
     return agg_df
 
@@ -262,10 +263,8 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
 
 
 def run_analysis_pipeline():
-    features_df = get_timing_features(years_to_get=[2021])
-    feature_preprocessing_pipeline = Pipeline(steps=[
-        ('race_weekend_scaler', RaceWeekendQuantileScaler()),
-    ])
+    features_df = get_timing_features(years_to_get=[2021], rebuild_cache=False)
+    y = features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
 
     numerical_feature_columns = [
         'speed_trap_s1_max',
@@ -275,10 +274,35 @@ def run_analysis_pipeline():
         'fastest_s1_seconds',
         'fastest_s2_seconds',
         'fastest_s3_seconds',
-        'fastest_lap_seconds'
+        'fastest_lap_seconds',
+        'year_round'
     ]
 
-    res = feature_preprocessing_pipeline.fit_transform(features_df[numerical_feature_columns + ['year_round']])
+    categorical_feature_columns = [
+        'driver'
+    ]
+
+    numerical_feature_preprocessing_pipeline = Pipeline(steps=[
+        ('race_weekend_scaler', RaceWeekendQuantileScaler()),
+    ])
+
+    categorical_feature_preprocessing_pipeline = Pipeline(steps=[
+        ('one_hot_encoder', OneHotEncoder())
+    ])
+
+    feature_preprocessor = ColumnTransformer(transformers=[
+        ('num_features', numerical_feature_preprocessing_pipeline, numerical_feature_columns),
+        ('cat_features', categorical_feature_preprocessing_pipeline, categorical_feature_columns)
+    ])
+
+    prediction_pipeline = Pipeline(steps=[
+        ('feature_preprocessing', feature_preprocessor),
+        ('svm regressor', SVR())
+    ])
+
+    prediction_pipeline.fit(features_df, y)
+    res = prediction_pipeline.predict(features_df)
+
     print(res)
 
 
@@ -420,7 +444,7 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
         'QualifyingTimeSeconds': 'qualifying_time_seconds',
     }).dropna().reset_index(drop=True)
 
-    timing_features_df.to_csv(timing_features_cache_path)
+    timing_features_df.to_csv(timing_features_cache_path, index=False)
 
     return timing_features_df
 
