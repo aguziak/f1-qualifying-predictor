@@ -369,15 +369,23 @@ def run_analysis():
     plot_error_dist(pd.Series(svr_model_scores), plot_z_score=False, error_name="SVR Spearman's Rho")
 
 
-def get_timing_features(years_to_get: List[int]):
+def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.DataFrame:
     """
 
     Args:
         years_to_get:
+        rebuild_cache:
 
     Returns:
 
     """
+    timing_features_cache_path = '../fastf1_cache.nosync/timing_features_df.csv'
+    cached_file_exists = os.path.isfile(timing_features_cache_path)
+
+    if cached_file_exists and not rebuild_cache:
+        timing_features_df = pd.read_csv(timing_features_cache_path)
+        return timing_features_df
+
     timing_df = get_timing_data(years_to_get)
     timing_df['year_round'] = timing_df['year'].astype(str) + '_' + timing_df['round'].astype(str)
     timing_df = timing_df.reset_index(drop=True)
@@ -411,6 +419,9 @@ def get_timing_features(years_to_get: List[int]):
         'Driver': 'driver',
         'QualifyingTimeSeconds': 'qualifying_time_seconds',
     }).dropna().reset_index(drop=True)
+
+    timing_features_df.to_csv(timing_features_cache_path)
+
     return timing_features_df
 
 
