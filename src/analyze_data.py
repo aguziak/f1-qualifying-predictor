@@ -302,7 +302,6 @@ def run_analysis():
         'Sector3TimeSeconds': np.min,
         'LapTimeSeconds': np.min,
         'Driver': 'first',
-        'QualifyingPosition': 'first',
         'QualifyingTimeSeconds': 'first',
         'year': 'first',
         'round': 'first',
