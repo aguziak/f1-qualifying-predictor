@@ -67,7 +67,7 @@ def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
     return agg_df
 
 
-def spearman_rho(y, y_pred) -> float:
+def spearman_rho(y) -> float:
     """
     Calculates Spearman's rank coefficient for two given lists
 
@@ -78,7 +78,7 @@ def spearman_rho(y, y_pred) -> float:
         float: The Spearman's rank coefficient for the provided lists
     """
     n_observations = len(y)
-    rank_differences_sq = (y - y_pred) ** 2
+    rank_differences_sq = (y['true_qualifying_rank'] - y['predicted_qualifying_rank']) ** 2
 
     s_r = (1. - (6. * np.sum(rank_differences_sq)) / (n_observations * (n_observations ** 2. - 1.)))
     return s_r
@@ -263,8 +263,40 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
     plt.show()
 
 
+def run_cross_validation(df, pipeline, n_runs, num_k_folds=5):
+    group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
+    scores = list()
+
+    def predict_by_year_round_group(group, pipeline):
+        group['predicted_qualifying_quantile'] = pipeline.predict(group)
+        group['predicted_qualifying_rank'] = group['predicted_qualifying_quantile'].rank(method='dense', ascending=True)
+        return group
+
+    for i in range(n_runs):
+        for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
+            k_fold_training_set = df.iloc[training_index]
+            k_fold_validation_set = df.iloc[validation_index]
+
+            pipeline.fit(k_fold_training_set, k_fold_training_set['true_qualifying_rank'])
+
+            k_fold_validation_set = k_fold_validation_set\
+                .groupby(by=['year_round'])\
+                .apply(predict_by_year_round_group, pipeline=pipeline)
+
+            s_r_score = np.average(k_fold_validation_set.groupby('year_round').apply(spearman_rho))
+            scores.append(s_r_score)
+    return scores
+
+
 def run_analysis_pipeline():
     features_df = get_timing_features(years_to_get=[2021], rebuild_cache=False)
+
+    driver_appearance_counts_series = features_df['driver'].value_counts()
+    drivers_to_keep = driver_appearance_counts_series.loc[driver_appearance_counts_series > 5]
+
+    # Remove all substitute drivers, defined as drivers who complete fewer than 5 races
+    features_df = features_df.loc[features_df['driver'].isin(drivers_to_keep.index)]
+
     features_df['true_qualifying_rank'] = \
         features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
 
@@ -302,23 +334,7 @@ def run_analysis_pipeline():
         ('svm regressor', SVR())
     ])
 
-    spearman_scorer = make_scorer(spearman_rho)
-    score = cross_val_score(prediction_pipeline,
-                            features_df,
-                            features_df['true_qualifying_rank'],
-                            cv=5,
-                            groups=features_df['year_round'],
-                            scoring=spearman_scorer)
-
-    prediction_pipeline.fit(features_df, features_df['true_qualifying_rank'])
-
-    features_df['predicted_qualifying_quantile'] = prediction_pipeline.predict(features_df)
-    features_df['predicted_qualfiying_rank'] = \
-        features_df[['year_round', 'predicted_qualifying_quantile']] \
-            .groupby(by='year_round') \
-            .rank('dense', ascending=True)
-
-    return features_df
+    return run_cross_validation(features_df, prediction_pipeline, n_runs=10, num_k_folds=5)
 
 
 def run_analysis():
@@ -465,4 +481,5 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
 
 
 if __name__ == '__main__':
-    run_analysis_pipeline()
+    res = run_analysis_pipeline()
+    print(res)
