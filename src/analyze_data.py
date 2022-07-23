@@ -6,6 +6,7 @@ from sklearn.svm import SVR
 import src.get_data
 import pandas as pd
 import numpy as np
+import visualizations
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
@@ -98,8 +99,8 @@ def get_timing_data(years: List[int]) -> pd.DataFrame:
     return df
 
 
-def run_cross_validation(df, pipeline, n_runs, num_k_folds=5):
-    group_k_fold = GroupShuffleSplit(n_splits=num_k_folds)
+def run_cross_validation(df, pipeline, n_splits=5, train_size=.75):
+    group_k_fold = GroupShuffleSplit(n_splits=n_splits, train_size=train_size)
     scores = list()
 
     def predict_by_year_round_group(group, p):
@@ -107,23 +108,22 @@ def run_cross_validation(df, pipeline, n_runs, num_k_folds=5):
         group['predicted_qualifying_rank'] = group['predicted_qualifying_quantile'].rank(method='dense', ascending=True)
         return group
 
-    for i in range(n_runs):
-        for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
-            k_fold_training_set = df.iloc[training_index]
-            k_fold_validation_set = df.iloc[validation_index]
+    for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
+        k_fold_training_set = df.iloc[training_index]
+        k_fold_validation_set = df.iloc[validation_index]
 
-            pipeline.fit(k_fold_training_set, k_fold_training_set['true_qualifying_rank'])
+        pipeline.fit(k_fold_training_set, k_fold_training_set['true_qualifying_rank'])
 
-            k_fold_validation_set = k_fold_validation_set\
-                .groupby(by=['year_round'])\
-                .apply(predict_by_year_round_group, pipeline=pipeline)
+        k_fold_validation_set = k_fold_validation_set\
+            .groupby(by=['year_round'])\
+            .apply(predict_by_year_round_group, p=pipeline)
 
-            s_r_score = np.average(k_fold_validation_set.groupby('year_round').apply(spearman_rho))
-            scores.append(s_r_score)
+        s_r_score = np.average(k_fold_validation_set.groupby('year_round').apply(spearman_rho))
+        scores.append(s_r_score)
     return scores
 
 
-def run_analysis_pipeline():
+def run_analysis_pipeline(n_splits, train_size=.75):
     features_df = get_timing_features(years_to_get=[2021], rebuild_cache=False)
 
     driver_appearance_counts_series = features_df['driver'].value_counts()
@@ -169,7 +169,7 @@ def run_analysis_pipeline():
         ('svm regressor', SVR())
     ])
 
-    return run_cross_validation(features_df, prediction_pipeline, n_runs=10, num_k_folds=5)
+    return run_cross_validation(features_df, prediction_pipeline, n_splits=n_splits, train_size=train_size)
 
 
 def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.DataFrame:
@@ -229,5 +229,6 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
 
 
 if __name__ == '__main__':
-    res = run_analysis_pipeline()
+    res = run_analysis_pipeline(n_splits=500, train_size=0.75)
+    visualizations.plot_error_dist(pd.Series(res))
     print(res)
