@@ -13,31 +13,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 
 from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
-from src.get_data import get_time_differences_for_race_weekend, get_telemetry_features_for_race_weekend
+from src.get_data import get_time_differences_for_race_weekend
 
 pd.options.mode.chained_assignment = None
-
-
-def get_telemetry_features_for_year(year: int, rebuild_cache=False) -> pd.DataFrame:
-    df_cache_path = '../fastf1_cache.nosync/telemetry_df.csv'
-    cached_file_exists = os.path.isfile(df_cache_path)
-
-    if cached_file_exists and not rebuild_cache:
-        telemetry_df = pd.read_csv(df_cache_path)
-        return telemetry_df
-
-    event_schedule = src.get_data.get_event_schedule_for_year(year)
-    agg_df = pd.DataFrame()
-
-    for round_num in event_schedule['RoundNumber'].tolist():
-        print(f'Processing round {round_num}')
-        new_data = get_telemetry_features_for_race_weekend(year, round_num)
-        if len(new_data) > 0:
-            agg_df = pd.concat([agg_df, new_data], axis=0)
-
-    agg_df.to_csv(df_cache_path, index=False)
-
-    return agg_df
 
 
 def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
