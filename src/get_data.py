@@ -102,7 +102,17 @@ if __name__ == '__main__':
     get_timing_data_for_session(2021, 1, 'FP1')
 
 
-def get_time_differences_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
+def get_timing_data_for_race_weekend(session_year: int, session_round: int) -> pd.DataFrame:
+    """
+    Retrieve the timing data for a specified race weekend, including free practice and qualifying
+
+    Args:
+        session_year (int): Year for which to get data
+        session_round (int): Round number for which to get data
+
+    Returns:
+        DataFrame: DataFrame containing timing data
+    """
     event = get_event_data_for_session(session_year, session_round)
     is_sprint_race_weekend = event.get_session_name(3) != 'Practice 3'
 

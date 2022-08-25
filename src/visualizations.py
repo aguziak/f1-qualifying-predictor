@@ -4,7 +4,8 @@ import scipy.stats
 from matplotlib import pyplot as plt
 
 
-def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: str = 'Error'):
+def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: str = 'Error',
+                    title: str = 'Error Distribution'):
     """
     Creates a histogram and QQ plot for the provided error distribution
 
@@ -12,6 +13,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
         errors (Series): Pandas Series object containing error data
         error_name (str): The name of the error being plotting, which will be used for axis labeling
         plot_z_score (bool): If true, will create the histogram using z-scores instead of raw scores
+        title (str): Optional parameter to override the title of the graph
 
     """
 
@@ -44,7 +46,7 @@ def plot_error_dist(errors: pd.Series, plot_z_score: bool = False, error_name: s
         ax1.set_xlabel(f'{error_name}')
 
     ax1.plot(gaussian_x, gaussian_y, color='r', linestyle='--', label='Scaled Normal Curve')
-    ax1.set_title('Error Distribution')
+    ax1.set_title(title)
     ax1.set_ylabel('Count')
     ax1.legend()
 

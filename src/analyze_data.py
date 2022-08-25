@@ -1,19 +1,20 @@
 import os.path
 
 from typing import List
-from sklearn.svm import SVR
+
+from sklearn.linear_model import LinearRegression, Lasso
 
 import src.get_data
 import pandas as pd
 import numpy as np
-import visualizations
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 
-from src.RaceWeekendQuantileScaler import RaceWeekendQuantileScaler
-from src.get_data import get_time_differences_for_race_weekend
+from src import visualizations
+from src.RaceWeekendScaler import RaceWeekendScaler
+from src.get_data import get_timing_data_for_race_weekend
 
 pd.options.mode.chained_assignment = None
 
@@ -34,7 +35,7 @@ def get_all_fp_timing_data_for_year(year: int) -> pd.DataFrame:
 
     for round_num in event_schedule['RoundNumber'].tolist():
         print(f'Processing round {round_num}')
-        new_data = get_time_differences_for_race_weekend(year, round_num)
+        new_data = get_timing_data_for_race_weekend(year, round_num)
         new_data['round'] = round_num
         if len(new_data) > 0:
             agg_df = pd.concat([agg_df, new_data], axis=0)
@@ -83,7 +84,7 @@ def run_cross_validation(df, pipeline, n_splits=5, train_size=.75):
 
     def predict_by_year_round_group(group, p):
         group['predicted_qualifying_quantile'] = p.predict(group)
-        group['predicted_qualifying_rank'] = group['predicted_qualifying_quantile'].rank(method='dense', ascending=True)
+        group['predicted_qualifying_rank'] = group['predicted_qualifying_quantile'].rank(method='first', ascending=True)
         return group
 
     for training_index, validation_index in group_k_fold.split(df, groups=df['year_round']):
@@ -92,8 +93,8 @@ def run_cross_validation(df, pipeline, n_splits=5, train_size=.75):
 
         pipeline.fit(k_fold_training_set, k_fold_training_set['true_qualifying_rank'])
 
-        k_fold_validation_set = k_fold_validation_set\
-            .groupby(by=['year_round'])\
+        k_fold_validation_set = k_fold_validation_set \
+            .groupby(by=['year_round']) \
             .apply(predict_by_year_round_group, p=pipeline)
 
         s_r_score = np.average(k_fold_validation_set.groupby('year_round').apply(spearman_rho))
@@ -101,36 +102,23 @@ def run_cross_validation(df, pipeline, n_splits=5, train_size=.75):
     return scores
 
 
-def run_analysis_pipeline(n_splits, train_size=.75):
-    features_df = get_timing_features(years_to_get=[2021], rebuild_cache=False)
+def create_analysis_pipeline_base(numerical_feature_columns: List, categorical_feature_columns: List):
+    """
+    Creates a sklearn pipeline with preprocessors for numerical and categorical data but without a predictor.
+        The predictor is to be added later and can be changed after the fact.
 
-    driver_appearance_counts_series = features_df['driver'].value_counts()
-    drivers_to_keep = driver_appearance_counts_series.loc[driver_appearance_counts_series > 5]
+    Args:
+        numerical_feature_columns (list): A list containing the names of the numerical features in the pandas DataFrame
+            that will be fed into the pipeline
+        categorical_feature_columns (list): A list containing the names of the categorical features in the pandas
+            DataFrame that will be fed into the pipeline
 
-    # Remove all substitute drivers, defined as drivers who complete fewer than 5 races
-    features_df = features_df.loc[features_df['driver'].isin(drivers_to_keep.index)]
-
-    features_df['true_qualifying_rank'] = \
-        features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
-
-    numerical_feature_columns = [
-        'speed_trap_s1_max',
-        'speed_trap_s2_max',
-        'speed_trap_fl_max',
-        'speed_trap_st_max',
-        'fastest_s1_seconds',
-        'fastest_s2_seconds',
-        'fastest_s3_seconds',
-        'fastest_lap_seconds',
-        'year_round'
-    ]
-
-    categorical_feature_columns = [
-        'driver'
-    ]
+    Returns:
+        Pipeline: An sklearn pipeline
+    """
 
     numerical_feature_preprocessing_pipeline = Pipeline(steps=[
-        ('race_weekend_scaler', RaceWeekendQuantileScaler()),
+        ('race_weekend_scaler', RaceWeekendScaler()),
     ])
 
     categorical_feature_preprocessing_pipeline = Pipeline(steps=[
@@ -143,23 +131,25 @@ def run_analysis_pipeline(n_splits, train_size=.75):
     ])
 
     prediction_pipeline = Pipeline(steps=[
-        ('feature_preprocessing', feature_preprocessor),
-        ('svm regressor', SVR())
+        ('feature_preprocessing', feature_preprocessor)
     ])
 
-    return run_cross_validation(features_df, prediction_pipeline, n_splits=n_splits, train_size=train_size)
+    return prediction_pipeline
 
 
 def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.DataFrame:
     """
+    Retrieves all the features derived from free practice timing data for the given years. Features are the
+        various speed trap speeds, sector times, and lap times.
 
     Args:
-        years_to_get:
-        rebuild_cache:
+        years_to_get (list): List of years for which to retrieve data
+        rebuild_cache (bool): If true will delete and recreate the cache
 
     Returns:
-
+        DataFrame: DataFrame containing the timing features
     """
+
     timing_features_cache_path = '../fastf1_cache.nosync/timing_features_df.csv'
     cached_file_exists = os.path.isfile(timing_features_cache_path)
 
@@ -184,6 +174,7 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
         'Sector3TimeSeconds': np.min,
         'LapTimeSeconds': np.min,
         'Driver': 'first',
+        'Team': 'first',
         'QualifyingTimeSeconds': 'first',
         'year': 'first',
         'round': 'first',
@@ -198,6 +189,7 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
         'Sector3TimeSeconds': 'fastest_s3_seconds',
         'LapTimeSeconds': 'fastest_lap_seconds',
         'Driver': 'driver',
+        'Team': 'team',
         'QualifyingTimeSeconds': 'qualifying_time_seconds',
     }).dropna().reset_index(drop=True)
 
@@ -207,6 +199,49 @@ def get_timing_features(years_to_get: List[int], rebuild_cache=False) -> pd.Data
 
 
 if __name__ == '__main__':
-    res = run_analysis_pipeline(n_splits=500, train_size=0.75)
-    visualizations.plot_error_dist(pd.Series(res))
-    print(res)
+    features_df = get_timing_features(years_to_get=[2020, 2021], rebuild_cache=False)
+
+    driver_appearance_counts_series = features_df['driver'].value_counts()
+    drivers_to_keep = driver_appearance_counts_series.loc[driver_appearance_counts_series > 5]
+
+    # Remove all substitute drivers, defined as drivers who complete fewer than 5 races
+    features_df = features_df.loc[features_df['driver'].isin(drivers_to_keep.index)]
+
+    features_df['true_qualifying_rank'] = \
+        features_df[['year_round', 'qualifying_time_seconds']].groupby(by='year_round').rank('dense', ascending=True)
+
+    splits = 500
+    train_size_pct = 0.75
+
+    speed_trap_features = [
+        'speed_trap_s1_max',
+        'speed_trap_s2_max',
+        'speed_trap_fl_max',
+        'speed_trap_st_max'
+    ]
+
+    fastest_sector_features = [
+        'fastest_s1_seconds',
+        'fastest_s2_seconds',
+        'fastest_s3_seconds',
+        'fastest_lap_seconds'
+    ]
+
+    numerical_features = speed_trap_features + fastest_sector_features
+
+    categorical_features = [
+        'driver',
+        'team'
+    ]
+
+    full_features_pipeline = create_analysis_pipeline_base(
+        numerical_feature_columns=['year_round'] + numerical_features,
+        categorical_feature_columns=['driver', 'team']
+    )
+
+    lasso_regressor = Lasso(alpha=.2)
+    full_features_pipeline.steps.append(('Lasso', lasso_regressor))
+
+    lasso_results = run_cross_validation(features_df, full_features_pipeline, n_splits=500, train_size=0.75)
+
+    visualizations.plot_error_dist(pd.Series(lasso_results))
